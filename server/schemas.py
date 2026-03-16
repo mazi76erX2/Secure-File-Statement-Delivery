@@ -53,7 +53,6 @@ class AccountStatementResponse(AccountStatementBase):
 
 
 class StatementDownloadLinkCreate(BaseModel):
-	statement_id: int = Field(gt=0)
 	expires_in_seconds: int = Field(default=900, ge=60, le=86400)
 	max_downloads: int = Field(default=1, ge=1, le=20)
 

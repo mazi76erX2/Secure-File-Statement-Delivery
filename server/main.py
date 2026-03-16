@@ -39,7 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-if settings.debug:
+if settings.debug and settings.enable_debug_toolbar:
     app.add_middleware(
         DebugToolbarMiddleware,
         panels=["debug_toolbar.panels.sqlalchemy.SQLAlchemyPanel"],

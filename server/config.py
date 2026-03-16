@@ -24,10 +24,12 @@ class Settings(BaseSettings):
     cache_host: str = "redis"
     cache_port: int = 6379
     cache_db: int = 0
+    statement_storage_dir: str = "storage/statements"
     cors_allow_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["*"]
     )
     log_level: str = "INFO"
+    enable_debug_toolbar: bool = False
 
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
