@@ -1,0 +1,62 @@
+services:
+  backend:
+    restart: always
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    environment:
+      - FASTAPI_ENV=prod
+    ports:
+      - 8000:8000
+    expose:
+      - 8000
+    volumes:
+      - ./:/app:rw
+      - /app/.venv
+    depends_on:
+      - db
+      - redis
+    networks:
+      - backend
+    env_file:
+      - ./.env
+  db:
+    image: postgres:18.3-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=${DATABASE_USERNAME}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_DB=${DATABASE_NAME}
+    ports:
+      - 5432:5432
+    volumes:
+      - db:/var/lib/postgresql/data
+    networks:
+      - backend
+  redis:
+    restart: unless-stopped
+    image: redis:8.6.1-alpine
+    expose:
+      - 6379
+    networks:
+      - backend
+  nginx:
+    build: ./docker/nginx
+    restart: unless-stopped
+    ports:
+      - 1337:80
+    depends_on:
+      - backend
+    volumes:
+      - static_volume:/app/nlp_sentiment_analysis/staticfiles
+    networks:
+      - backend
+
+volumes:
+  db: {}
+  static_volume: {}
+
+networks:
+  backend:
+    # Use a custom driver which takes special options
+    driver: bridge

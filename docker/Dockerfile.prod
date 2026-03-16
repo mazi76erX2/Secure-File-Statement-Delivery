@@ -1,0 +1,36 @@
+FROM python:3.14-slim-bookworm AS builder
+
+ENV TZ=UTC+2
+ENV UV_SYSTEM_PYTHON=1
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+RUN pip install --no-cache-dir --upgrade pip uv
+
+COPY pyproject.toml uv.lock* ./
+RUN uv sync --frozen --no-install-project || uv sync --no-install-project --upgrade
+
+COPY . .
+RUN uv sync --frozen || uv sync --upgrade
+
+FROM python:3.14-slim-bookworm AS final
+
+ENV TZ=UTC+2
+ENV PATH="/app/.venv/bin:${PATH}"
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    netcat-traditional && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
+COPY --from=builder /app /app
+RUN chmod +x /app/docker/entrypoint.sh
+
+ENTRYPOINT ["/app/docker/entrypoint.sh"]

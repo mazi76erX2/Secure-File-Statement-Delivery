@@ -1,0 +1,67 @@
+services:
+  backend:
+    restart: always
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    environment:
+      - FASTAPI_ENV=dev
+    ports:
+      - "8000:8000"
+    expose:
+      - 8000
+    volumes:
+      - ./:/app:rw
+      - /app/.venv
+    develop:
+      watch:
+        # sync source changes into the container instantly (uvicorn --reload picks them up)
+        - action: sync
+          path: ./server
+          target: /app/server
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+        - action: sync
+          path: ./alembic
+          target: /app/alembic
+        # rebuild the image when dependencies change
+        - action: rebuild
+          path: pyproject.toml
+        - action: rebuild
+          path: uv.lock
+    depends_on:
+      - db
+      - redis
+    networks:
+      - backend
+    env_file:
+      - ./.env
+  db:
+    image: postgres:18.3-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=${DATABASE_USERNAME}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_DB=${DATABASE_NAME}
+    ports:
+      - 5432:5432
+    volumes:
+      - db:/var/lib/postgresql/data
+    networks:
+      - backend
+  redis:
+    restart: unless-stopped
+    image: redis:8.6.1-alpine
+    expose:
+      - 6379
+    networks:
+      - backend
+
+volumes:
+  db: {}
+
+networks:
+  backend:
+    # Use a custom driver which takes special options
+    driver: bridge
