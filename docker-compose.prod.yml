@@ -48,7 +48,7 @@ services:
     depends_on:
       - backend
     volumes:
-      - static_volume:/app/nlp_sentiment_analysis/staticfiles
+      - static_volume:/app/server/staticfiles
     networks:
       - backend
 
