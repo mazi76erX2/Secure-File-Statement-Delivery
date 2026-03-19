@@ -1,6 +1,6 @@
 # Terraform Storage Backends
 
-This folder contains Terraform templates for statement document storage backends:
+This folder contains Terraform/OpenTofu templates for statement document storage backends:
 
 - `aws/` - AWS S3 bucket
 - `azure/` - Azure Storage Account + Blob container
@@ -8,20 +8,23 @@ This folder contains Terraform templates for statement document storage backends
 
 ## Usage
 
-From one backend folder at a time:
+Run from one backend folder at a time:
 
 ```bash
-terraform init
-terraform validate
-terraform plan -out tfplan
-terraform apply tfplan
+tofu init
+tofu validate
+tofu plan -out tfplan
+tofu apply tfplan
 ```
 
-The local environment in this workspace does not currently have Terraform installed (`terraform` command not found).
+Terraform works too if preferred (`terraform` instead of `tofu`).
 
-For macOS, install via Homebrew:
+## MinIO notes
 
-```bash
-brew tap hashicorp/tap
-brew install hashicorp/tap/terraform
-```
+The MinIO module includes:
+
+- bucket creation
+- bucket versioning
+- optional SSE configuration via `enable_bucket_encryption`
+
+`enable_bucket_encryption` defaults to `false` because many local/dev MinIO setups do not have KMS configured.

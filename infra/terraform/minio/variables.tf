@@ -25,3 +25,9 @@ variable "region" {
   description = "Pseudo-region for S3-compatible provider"
   default     = "us-east-1"
 }
+
+variable "enable_bucket_encryption" {
+  type        = bool
+  description = "Enable bucket default encryption (requires MinIO KMS configuration)"
+  default     = false
+}
