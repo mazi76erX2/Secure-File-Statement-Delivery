@@ -6,21 +6,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class CustomerBase(BaseModel):
-	full_name: str = Field(min_length=1, max_length=255)
-	email: str = Field(min_length=5, max_length=255)
+    full_name: str = Field(min_length=1, max_length=255)
+    email: str = Field(min_length=5, max_length=255)
 
 
 class CustomerCreate(CustomerBase):
-	id_number: str = Field(min_length=6, max_length=20)
+    id_number: str = Field(min_length=6, max_length=20)
 
 
 class CustomerResponse(CustomerBase):
-	id: int
-	created_at: datetime
-	updated_at: datetime
-	id_number_configured: bool
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    id_number_configured: bool
 
-	model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AccountStatementBase(BaseModel):
@@ -35,9 +35,11 @@ class AccountStatementBase(BaseModel):
     checksum_sha256: str | None = Field(default=None, min_length=64, max_length=64)
 
     @model_validator(mode="after")
-    def validate_period_range(self) -> "AccountStatementBase":
+    def validate_period_range(self) -> AccountStatementBase:
         if self.statement_period_end < self.statement_period_start:
-            raise ValueError("statement_period_end must be on or after statement_period_start")
+            raise ValueError(
+                "statement_period_end must be on or after statement_period_start"
+            )
         return self
 
 

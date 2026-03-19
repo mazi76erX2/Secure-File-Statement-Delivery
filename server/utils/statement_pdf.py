@@ -46,7 +46,14 @@ class AccountStatementPdf(FPDF):
         self.add_page()
 
         self.set_font("Helvetica", "B", 8)
-        self.cell(0, 4, "24hr Client Care Centre 0860 10 20 43", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.cell(
+            0,
+            4,
+            "24hr Client Care Centre 0860 10 20 43",
+            align="C",
+            new_x="LMARGIN",
+            new_y="NEXT",
+        )
         self.cell(0, 4, "capitecbank.co.za", align="C", new_x="LMARGIN", new_y="NEXT")
         self.ln(4)
 
@@ -60,11 +67,17 @@ class AccountStatementPdf(FPDF):
         self.set_font("Helvetica", "", 11)
         self.cell(55, 6, payload.bank_name, align="C", new_x="LMARGIN", new_y="NEXT")
         self.set_x(70)
-        self.cell(55, 6, payload.statement_date, align="C", new_x="LMARGIN", new_y="NEXT")
+        self.cell(
+            55, 6, payload.statement_date, align="C", new_x="LMARGIN", new_y="NEXT"
+        )
         self.set_x(70)
-        self.cell(55, 6, f"Branch: {payload.branch}", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.cell(
+            55, 6, f"Branch: {payload.branch}", align="C", new_x="LMARGIN", new_y="NEXT"
+        )
         self.set_x(70)
-        self.cell(55, 6, f"Device: {payload.device}", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.cell(
+            55, 6, f"Device: {payload.device}", align="C", new_x="LMARGIN", new_y="NEXT"
+        )
 
         self.set_xy(10, 75)
         self.set_font("Helvetica", "B", 10)
@@ -87,7 +100,9 @@ class AccountStatementPdf(FPDF):
         self.set_x(125)
         self.cell(60, 5, f"Print: {payload.print_date}", new_x="LMARGIN", new_y="NEXT")
         self.set_x(125)
-        self.cell(60, 5, f"Account: {payload.account_number}", new_x="LMARGIN", new_y="NEXT")
+        self.cell(
+            60, 5, f"Account: {payload.account_number}", new_x="LMARGIN", new_y="NEXT"
+        )
 
         current_y = self._render_transactions(payload.transactions)
 

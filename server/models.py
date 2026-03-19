@@ -3,7 +3,6 @@
 from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, func
-
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -29,10 +28,12 @@ class Customer(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    email: Mapped[str] = mapped_column(
+        String(255), unique=True, index=True, nullable=False
+    )
     id_number_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    statements: Mapped[list["AccountStatement"]] = relationship(
+    statements: Mapped[list[AccountStatement]] = relationship(
         back_populates="customer", cascade="all, delete-orphan"
     )
 
@@ -58,7 +59,7 @@ class AccountStatement(Base, TimestampMixin):
     checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     customer: Mapped[Customer] = relationship(back_populates="statements")
-    download_links: Mapped[list["StatementDownloadLink"]] = relationship(
+    download_links: Mapped[list[StatementDownloadLink]] = relationship(
         back_populates="statement", cascade="all, delete-orphan"
     )
 
@@ -78,11 +79,17 @@ class StatementDownloadLink(Base, TimestampMixin):
         String(128), unique=True, index=True, nullable=False
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    max_downloads: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
-    download_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    max_downloads: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1"
+    )
+    download_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
     last_downloaded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     statement: Mapped[AccountStatement] = relationship(back_populates="download_links")

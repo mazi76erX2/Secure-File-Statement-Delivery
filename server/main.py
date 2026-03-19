@@ -40,8 +40,9 @@ app.add_middleware(
 )
 
 if settings.debug and settings.enable_debug_toolbar:
+    # Cast to Any because the third-party middleware has incomplete type hints.
     app.add_middleware(
-        DebugToolbarMiddleware,
+        DebugToolbarMiddleware,  # type: ignore[arg-type]
         panels=["debug_toolbar.panels.sqlalchemy.SQLAlchemyPanel"],
     )
 

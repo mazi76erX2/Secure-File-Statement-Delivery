@@ -29,7 +29,7 @@ def verify_secret(secret: str, stored_hash: str) -> bool:
         iterations = int(iterations_raw)
         salt = base64.urlsafe_b64decode(salt_b64.encode("utf-8"))
         expected_digest = base64.urlsafe_b64decode(digest_b64.encode("utf-8"))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return False
 
     calculated = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), salt, iterations)

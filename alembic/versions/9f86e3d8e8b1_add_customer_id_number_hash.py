@@ -9,6 +9,7 @@ Create Date: 2026-03-16 20:12:00
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "9f86e3d8e8b1"
@@ -18,7 +19,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("customers", sa.Column("id_number_hash", sa.String(length=255), nullable=True))
+    op.add_column(
+        "customers", sa.Column("id_number_hash", sa.String(length=255), nullable=True)
+    )
 
 
 def downgrade() -> None:

@@ -54,7 +54,9 @@ def _parse_month(month_value: str) -> date:
         ) from exc
 
 
-def _resolve_month_range(from_month: str | None, to_month: str | None) -> tuple[date, date]:
+def _resolve_month_range(
+    from_month: str | None, to_month: str | None
+) -> tuple[date, date]:
     today = datetime.now(UTC).date()
     first_day_this_month = today.replace(day=1)
 
@@ -65,13 +67,18 @@ def _resolve_month_range(from_month: str | None, to_month: str | None) -> tuple[
         return start, end
 
     if from_month is None:
-        raise HTTPException(status_code=400, detail="from_month is required when to_month is provided")
+        raise HTTPException(
+            status_code=400, detail="from_month is required when to_month is provided"
+        )
 
     start_month = _parse_month(from_month)
     end_month = _parse_month(to_month) if to_month else start_month
 
     if end_month < start_month:
-        raise HTTPException(status_code=400, detail="to_month must be greater than or equal to from_month")
+        raise HTTPException(
+            status_code=400,
+            detail="to_month must be greater than or equal to from_month",
+        )
 
     if end_month.year == today.year and end_month.month == today.month:
         end = today
@@ -293,7 +300,8 @@ async def issue_month_range_links(
         link = StatementDownloadLink(
             statement_id=statement.id,
             token_hash=_hash_token(token),
-            expires_at=datetime.now(UTC) + timedelta(seconds=payload.expires_in_seconds),
+            expires_at=datetime.now(UTC)
+            + timedelta(seconds=payload.expires_in_seconds),
             max_downloads=payload.max_downloads,
         )
         session.add(link)
@@ -333,7 +341,9 @@ async def download_statement(
     token_hash = _hash_token(token)
 
     link = await session.scalar(
-        select(StatementDownloadLink).where(StatementDownloadLink.token_hash == token_hash)
+        select(StatementDownloadLink).where(
+            StatementDownloadLink.token_hash == token_hash
+        )
     )
 
     if not link:
@@ -358,12 +368,16 @@ async def download_statement(
             detail="Customer ID number is not configured for statement protection",
         )
     if not x_id_number or not verify_secret(x_id_number, customer.id_number_hash):
-        raise HTTPException(status_code=401, detail="Invalid or missing customer ID number")
+        raise HTTPException(
+            status_code=401, detail="Invalid or missing customer ID number"
+        )
 
     try:
         raw_pdf = storage_service.read_pdf(statement.file_path)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Statement file is unavailable") from exc
+        raise HTTPException(
+            status_code=404, detail="Statement file is unavailable"
+        ) from exc
     protected_pdf = encrypt_pdf_content(raw_pdf, x_id_number)
 
     link.download_count += 1

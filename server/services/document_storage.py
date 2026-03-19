@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 
 class DocumentStorageService:
@@ -12,14 +13,16 @@ class DocumentStorageService:
         self.provider = str(getattr(settings, "storage_provider", "local")).lower()
         self.prefix = str(getattr(settings, "storage_prefix", "statements")).strip("/")
 
-        self._s3_client = None
-        self._blob_container_client = None
+        self._s3_client: Any | None = None
+        self._blob_container_client: Any | None = None
 
     def save_pdf(self, content: bytes, customer_id: int, file_name: str) -> str:
         object_key = self._build_object_key(customer_id, file_name)
 
         if self.provider == "local":
-            base_dir = Path(getattr(self.settings, "statement_storage_dir", "storage/statements"))
+            base_dir = Path(
+                getattr(self.settings, "statement_storage_dir", "storage/statements")
+            )
             full_path = base_dir / object_key
             full_path.parent.mkdir(parents=True, exist_ok=True)
             full_path.write_bytes(content)
@@ -45,7 +48,9 @@ class DocumentStorageService:
 
     def read_pdf(self, object_key: str) -> bytes:
         if self.provider == "local":
-            base_dir = Path(getattr(self.settings, "statement_storage_dir", "storage/statements"))
+            base_dir = Path(
+                getattr(self.settings, "statement_storage_dir", "storage/statements")
+            )
             path = base_dir / object_key
             if not path.exists() or not path.is_file():
                 raise FileNotFoundError("Statement file is unavailable")
@@ -86,7 +91,9 @@ class DocumentStorageService:
                 "s3",
                 region_name=getattr(self.settings, "aws_region", None),
                 aws_access_key_id=getattr(self.settings, "aws_access_key_id", None),
-                aws_secret_access_key=getattr(self.settings, "aws_secret_access_key", None),
+                aws_secret_access_key=getattr(
+                    self.settings, "aws_secret_access_key", None
+                ),
             )
             return self._s3_client
 
@@ -106,7 +113,9 @@ class DocumentStorageService:
 
         from azure.storage.blob import BlobServiceClient
 
-        connection_string = getattr(self.settings, "azure_storage_connection_string", None)
+        connection_string = getattr(
+            self.settings, "azure_storage_connection_string", None
+        )
         if connection_string:
             service = BlobServiceClient.from_connection_string(str(connection_string))
         else:
