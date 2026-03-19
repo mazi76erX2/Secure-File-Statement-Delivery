@@ -6,9 +6,14 @@ DATABASE_PORT=${DATABASE_PORT:-5432}
 APP_DIR=${APP_DIR:-server}
 FASTAPI_ENV=${FASTAPI_ENV:-prod}
 
+echo "Waiting for PostgreSQL DNS at ${DATABASE_HOST}..."
+until getent hosts "$DATABASE_HOST" >/dev/null 2>&1; do
+  sleep 1
+done
+
 echo "Waiting for PostgreSQL at ${DATABASE_HOST}:${DATABASE_PORT}..."
-while ! nc -z "$DATABASE_HOST" "$DATABASE_PORT"; do
-  sleep 0.1
+until nc -z "$DATABASE_HOST" "$DATABASE_PORT"; do
+  sleep 1
 done
 echo "PostgreSQL is available."
 

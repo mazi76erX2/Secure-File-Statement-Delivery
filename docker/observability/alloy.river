@@ -9,10 +9,12 @@ loki.write "default" {
 }
 
 local.file_match "docker_logs" {
-  path_targets = [{
-    __path__ = "/var/lib/docker/containers/*/*-json.log",
-    job      = "docker"
-  }]
+  path_targets = [
+    {
+      __path__ = "/var/lib/docker/containers/*/*-json.log",
+      job      = "docker",
+    },
+  ]
 }
 
 loki.source.file "docker_logs" {
