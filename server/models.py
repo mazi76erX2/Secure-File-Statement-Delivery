@@ -30,6 +30,7 @@ class Customer(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    id_number_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     statements: Mapped[list["AccountStatement"]] = relationship(
         back_populates="customer", cascade="all, delete-orphan"

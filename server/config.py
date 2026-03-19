@@ -24,7 +24,22 @@ class Settings(BaseSettings):
     cache_host: str = "redis"
     cache_port: int = 6379
     cache_db: int = 0
+    storage_provider: str = "local"
+    storage_bucket_name: str | None = None
+    storage_prefix: str = "statements"
     statement_storage_dir: str = "storage/statements"
+    statement_api_key: str | None = None
+    aws_region: str = "af-south-1"
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    azure_storage_connection_string: str | None = None
+    azure_storage_account_url: str | None = None
+    azure_storage_account_key: str | None = None
+    azure_storage_container: str | None = None
+    minio_endpoint_url: str | None = None
+    minio_access_key: str | None = None
+    minio_secret_key: str | None = None
+    minio_secure: bool = True
     cors_allow_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["*"]
     )
