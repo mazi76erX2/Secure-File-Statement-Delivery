@@ -7,6 +7,14 @@ from pathlib import Path
 from typing import Any
 
 
+class StorageConfigurationError(ValueError):
+    """Raised when the storage backend is misconfigured."""
+
+
+class StorageUnavailableError(RuntimeError):
+    """Raised when the storage backend is unavailable."""
+
+
 class DocumentStorageService:
     def __init__(self, settings: object) -> None:
         self.settings = settings
@@ -20,53 +28,102 @@ class DocumentStorageService:
         object_key = self._build_object_key(customer_id, file_name)
 
         if self.provider == "local":
-            base_dir = Path(
-                getattr(self.settings, "statement_storage_dir", "storage/statements")
-            )
-            full_path = base_dir / object_key
+            full_path = self._resolve_local_path(object_key)
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            full_path.write_bytes(content)
+            try:
+                full_path.write_bytes(content)
+            except OSError as exc:
+                raise StorageUnavailableError(
+                    "Failed to write statement to local storage"
+                ) from exc
             return object_key
 
         if self.provider in {"aws", "minio"}:
+            from botocore.exceptions import BotoCoreError, ClientError
+
             bucket = self._require_setting("storage_bucket_name")
             client = self._get_s3_client()
-            client.put_object(
-                Bucket=bucket,
-                Key=object_key,
-                Body=content,
-                ContentType="application/pdf",
-            )
+            try:
+                client.put_object(
+                    Bucket=bucket,
+                    Key=object_key,
+                    Body=content,
+                    ContentType="application/pdf",
+                )
+            except (ClientError, BotoCoreError) as exc:
+                raise StorageUnavailableError(
+                    "Failed to store statement in S3-compatible backend"
+                ) from exc
             return object_key
 
         if self.provider == "azure":
+            from azure.core.exceptions import AzureError
+
             blob_client = self._get_blob_container_client()
-            blob_client.upload_blob(name=object_key, data=content, overwrite=True)
+            try:
+                blob_client.upload_blob(name=object_key, data=content, overwrite=True)
+            except AzureError as exc:
+                raise StorageUnavailableError(
+                    "Failed to store statement in Azure Blob storage"
+                ) from exc
             return object_key
 
-        raise ValueError(f"Unsupported storage_provider: {self.provider}")
+        raise StorageConfigurationError(
+            f"Unsupported storage_provider: {self.provider}"
+        )
 
     def read_pdf(self, object_key: str) -> bytes:
         if self.provider == "local":
-            base_dir = Path(
-                getattr(self.settings, "statement_storage_dir", "storage/statements")
-            )
-            path = base_dir / object_key
+            path = self._resolve_local_path(object_key)
             if not path.exists() or not path.is_file():
                 raise FileNotFoundError("Statement file is unavailable")
-            return path.read_bytes()
+            try:
+                return path.read_bytes()
+            except OSError as exc:
+                raise StorageUnavailableError(
+                    "Failed to read statement from local storage"
+                ) from exc
 
         if self.provider in {"aws", "minio"}:
+            from botocore.exceptions import BotoCoreError, ClientError
+
             bucket = self._require_setting("storage_bucket_name")
             client = self._get_s3_client()
-            response = client.get_object(Bucket=bucket, Key=object_key)
+            try:
+                response = client.get_object(Bucket=bucket, Key=object_key)
+            except ClientError as exc:
+                error_code = (
+                    exc.response.get("Error", {}).get("Code")
+                    if hasattr(exc, "response")
+                    else None
+                )
+                if error_code in {"404", "NoSuchKey", "NotFound"}:
+                    raise FileNotFoundError("Statement file is unavailable") from exc
+                raise StorageUnavailableError(
+                    "Failed to read statement from S3-compatible backend"
+                ) from exc
+            except BotoCoreError as exc:
+                raise StorageUnavailableError(
+                    "Failed to read statement from S3-compatible backend"
+                ) from exc
             return response["Body"].read()
 
         if self.provider == "azure":
-            blob_client = self._get_blob_container_client().get_blob_client(object_key)
-            return blob_client.download_blob().readall()
+            from azure.core.exceptions import AzureError, ResourceNotFoundError
 
-        raise ValueError(f"Unsupported storage_provider: {self.provider}")
+            blob_client = self._get_blob_container_client().get_blob_client(object_key)
+            try:
+                return blob_client.download_blob().readall()
+            except ResourceNotFoundError as exc:
+                raise FileNotFoundError("Statement file is unavailable") from exc
+            except AzureError as exc:
+                raise StorageUnavailableError(
+                    "Failed to read statement from Azure Blob storage"
+                ) from exc
+
+        raise StorageConfigurationError(
+            f"Unsupported storage_provider: {self.provider}"
+        )
 
     def _build_object_key(self, customer_id: int, file_name: str) -> str:
         safe_name = Path(file_name or "statement.pdf").name
@@ -77,8 +134,22 @@ class DocumentStorageService:
     def _require_setting(self, key: str) -> str:
         value = getattr(self.settings, key, None)
         if not value:
-            raise ValueError(f"Missing required setting: {key}")
+            raise StorageConfigurationError(f"Missing required setting: {key}")
         return str(value)
+
+    def _local_base_dir(self) -> Path:
+        return Path(
+            getattr(self.settings, "statement_storage_dir", "storage/statements")
+        ).resolve()
+
+    def _resolve_local_path(self, object_key: str) -> Path:
+        base_dir = self._local_base_dir()
+        candidate = (base_dir / object_key).resolve()
+        try:
+            candidate.relative_to(base_dir)
+        except ValueError as exc:
+            raise FileNotFoundError("Statement file is unavailable") from exc
+        return candidate
 
     def _get_s3_client(self):
         if self._s3_client is not None:

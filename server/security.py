@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import secrets
 from io import BytesIO
 
-import pikepdf
+
+class InvalidPdfError(ValueError):
+    """Raised when stored PDF content cannot be encrypted safely."""
 
 
 def hash_secret(secret: str, iterations: int = 300_000) -> str:
@@ -27,9 +30,15 @@ def verify_secret(secret: str, stored_hash: str) -> bool:
         if algorithm != "pbkdf2_sha256":
             return False
         iterations = int(iterations_raw)
+        if iterations <= 0:
+            return False
         salt = base64.urlsafe_b64decode(salt_b64.encode("utf-8"))
         expected_digest = base64.urlsafe_b64decode(digest_b64.encode("utf-8"))
-    except ValueError, TypeError:
+    except ValueError:
+        return False
+    except TypeError:
+        return False
+    except binascii.Error:
         return False
 
     calculated = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), salt, iterations)
@@ -37,16 +46,20 @@ def verify_secret(secret: str, stored_hash: str) -> bool:
 
 
 def encrypt_pdf_content(pdf_content: bytes, password: str) -> bytes:
-    output = BytesIO()
+    import pikepdf
 
-    with pikepdf.open(BytesIO(pdf_content)) as pdf:
-        pdf.save(
-            output,
-            encryption=pikepdf.Encryption(
-                owner=password,
-                user=password,
-                R=6,
-            ),
-        )
+    output = BytesIO()
+    try:
+        with pikepdf.open(BytesIO(pdf_content)) as pdf:
+            pdf.save(
+                output,
+                encryption=pikepdf.Encryption(
+                    owner=password,
+                    user=password,
+                    R=6,
+                ),
+            )
+    except pikepdf.PdfError as exc:
+        raise InvalidPdfError("Invalid PDF content") from exc
 
     return output.getvalue()

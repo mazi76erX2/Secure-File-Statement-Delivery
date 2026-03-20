@@ -385,6 +385,10 @@ uv run pre-commit run --all-files
 | `FASTAPI_ENV` | `dev` | Environment: `dev`, `prod` |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `CORS_ALLOW_ORIGINS` | - | Comma-separated allowed origins |
+| `MAX_STATEMENT_FILE_SIZE_BYTES` | `10485760` | Maximum upload size in bytes |
+| `STATEMENT_DOWNLOAD_RATE_LIMIT_REQUESTS` | `10` | Max download attempts per client IP per window |
+| `STATEMENT_DOWNLOAD_RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate-limit window size in seconds |
+| `TRUST_PROXY_HEADERS` | `false` | Trust `X-Forwarded-For` for client IP extraction |
 | `STATEMENT_API_KEY` | - | API key for admin endpoints |
 
 ## AWS Deployment Guide

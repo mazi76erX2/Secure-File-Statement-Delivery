@@ -41,8 +41,12 @@ class Settings(BaseSettings):
     minio_secret_key: str | None = None
     minio_secure: bool = True
     cors_allow_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["*"]
+        default_factory=lambda: ["http://localhost:3000", "http://localhost:8000"]
     )
+    max_statement_file_size_bytes: int = 10 * 1024 * 1024
+    statement_download_rate_limit_requests: int = 10
+    statement_download_rate_limit_window_seconds: int = 60
+    trust_proxy_headers: bool = False
     log_level: str = "INFO"
     enable_debug_toolbar: bool = False
 
@@ -83,6 +87,10 @@ class Settings(BaseSettings):
     @property
     def redis_url(self) -> str:
         return f"redis://{self.cache_host}:{self.cache_port}/{self.cache_db}"
+
+    @property
+    def has_wildcard_cors(self) -> bool:
+        return "*" in self.cors_allow_origins
 
 
 @lru_cache

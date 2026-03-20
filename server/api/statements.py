@@ -6,7 +6,10 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from urllib.parse import quote
 
+from cache import redis_cache
 from config import settings
 from database import get_session
 from fastapi import (
@@ -31,9 +34,14 @@ from schemas import (
     StatementDownloadLinkIssued,
 )
 from security import encrypt_pdf_content, hash_secret, verify_secret
-from services.document_storage import DocumentStorageService
+from services.document_storage import (
+    DocumentStorageService,
+    StorageConfigurationError,
+    StorageUnavailableError,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/statements", tags=["statements"])
 storage_service = DocumentStorageService(settings)
@@ -41,6 +49,66 @@ storage_service = DocumentStorageService(settings)
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _build_content_disposition(file_name: str) -> str:
+    raw_name = Path(file_name or "statement.pdf").name
+    sanitized = "".join(
+        char
+        for char in raw_name
+        if char.isprintable() and char not in {'"', "\\", "\r", "\n"}
+    ).strip()
+    safe_name = sanitized or "statement.pdf"
+    encoded_name = quote(safe_name, safe="")
+    return f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{encoded_name}"
+
+
+def _extract_client_ip(request: Request) -> str:
+    if settings.trust_proxy_headers:
+        x_forwarded_for = request.headers.get("X-Forwarded-For")
+        if x_forwarded_for:
+            first_hop = x_forwarded_for.split(",", 1)[0].strip()
+            if first_hop:
+                return first_hop
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _build_download_rate_limit_key(client_ip: str) -> str:
+    return f"statement-download-rate:{client_ip}"
+
+
+async def _enforce_download_rate_limit(request: Request) -> None:
+    if (
+        settings.statement_download_rate_limit_requests < 1
+        or settings.statement_download_rate_limit_window_seconds < 1
+    ):
+        raise HTTPException(
+            status_code=500, detail="Download rate limit configuration is invalid"
+        )
+
+    client_ip = _extract_client_ip(request)
+    cache_key = _build_download_rate_limit_key(client_ip)
+    try:
+        attempts = await redis_cache.incr_with_expiry(
+            cache_key, settings.statement_download_rate_limit_window_seconds
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503, detail="Rate limiting is temporarily unavailable"
+        ) from exc
+
+    if attempts > settings.statement_download_rate_limit_requests:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many download attempts. Please try again later.",
+            headers={
+                "Retry-After": str(
+                    settings.statement_download_rate_limit_window_seconds
+                )
+            },
+        )
 
 
 def _parse_month(month_value: str) -> date:
@@ -165,22 +233,56 @@ async def upload_statement(
             detail="statement_period_end must be on or after statement_period_start",
         )
 
+    normalized_account_number_last4 = account_number_last4.strip()
+    if (
+        len(normalized_account_number_last4) != 4
+        or not normalized_account_number_last4.isdigit()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="account_number_last4 must contain exactly 4 digits",
+        )
+
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if not content.lstrip().startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=400, detail="Uploaded file is not a valid PDF document"
+        )
+    if len(content) > settings.max_statement_file_size_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail="Uploaded file exceeds maximum allowed size",
+        )
 
-    generated_name = file.filename or "statement.pdf"
-    stored_object_key = storage_service.save_pdf(content, customer_id, generated_name)
+    uploaded_file_name = Path(file.filename or "statement.pdf").name.strip()
+    if not uploaded_file_name:
+        uploaded_file_name = "statement.pdf"
+    try:
+        stored_object_key = await run_in_threadpool(
+            storage_service.save_pdf, content, customer_id, uploaded_file_name
+        )
+    except StorageConfigurationError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Statement storage is not configured correctly",
+        ) from exc
+    except StorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Statement storage is temporarily unavailable",
+        ) from exc
 
     statement = AccountStatement(
         customer_id=customer_id,
-        account_number_last4=account_number_last4,
+        account_number_last4=normalized_account_number_last4,
         statement_period_start=statement_period_start,
         statement_period_end=statement_period_end,
-        file_name=file.filename or generated_name,
+        file_name=uploaded_file_name,
         file_path=stored_object_key,
         content_type=file.content_type,
         file_size_bytes=len(content),
@@ -335,15 +437,17 @@ async def issue_month_range_links(
 @router.get("/download/{token}", name="download_statement")
 async def download_statement(
     token: str,
+    request: Request,
     x_id_number: str | None = Header(default=None, alias="X-ID-Number"),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     token_hash = _hash_token(token)
+    await _enforce_download_rate_limit(request)
 
     link = await session.scalar(
-        select(StatementDownloadLink).where(
-            StatementDownloadLink.token_hash == token_hash
-        )
+        select(StatementDownloadLink)
+        .where(StatementDownloadLink.token_hash == token_hash)
+        .with_for_update()
     )
 
     if not link:
@@ -367,18 +471,49 @@ async def download_statement(
             status_code=409,
             detail="Customer ID number is not configured for statement protection",
         )
-    if not x_id_number or not verify_secret(x_id_number, customer.id_number_hash):
+
+    provided_id_number = (x_id_number or "").strip()
+    if len(provided_id_number) < 6 or len(provided_id_number) > 20:
+        raise HTTPException(
+            status_code=401, detail="Invalid or missing customer ID number"
+        )
+    if not verify_secret(provided_id_number, customer.id_number_hash):
         raise HTTPException(
             status_code=401, detail="Invalid or missing customer ID number"
         )
 
     try:
-        raw_pdf = storage_service.read_pdf(statement.file_path)
+        raw_pdf = await run_in_threadpool(storage_service.read_pdf, statement.file_path)
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=404, detail="Statement file is unavailable"
         ) from exc
-    protected_pdf = encrypt_pdf_content(raw_pdf, x_id_number)
+    except StorageConfigurationError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Statement storage is not configured correctly",
+        ) from exc
+    except StorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Statement storage is temporarily unavailable",
+        ) from exc
+    if statement.checksum_sha256:
+        actual_checksum = hashlib.sha256(raw_pdf).hexdigest()
+        if not hmac.compare_digest(actual_checksum, statement.checksum_sha256):
+            raise HTTPException(
+                status_code=500,
+                detail="Statement integrity check failed",
+            )
+    try:
+        protected_pdf = await run_in_threadpool(
+            encrypt_pdf_content, raw_pdf, provided_id_number
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Stored statement file is not a valid PDF",
+        ) from exc
 
     link.download_count += 1
     link.last_downloaded_at = now_utc
@@ -388,6 +523,9 @@ async def download_statement(
         content=protected_pdf,
         media_type=statement.content_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{statement.file_name}"',
+            "Content-Disposition": _build_content_disposition(statement.file_name),
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
         },
     )

@@ -39,5 +39,16 @@ class RedisCache:
         if self.redis:
             await self.redis.delete(key)
 
+    async def incr_with_expiry(self, key: str, expire_seconds: int) -> int:
+        """Atomically increment a key and ensure it expires."""
+        if not self.redis:
+            raise RuntimeError("Redis cache is not connected")
+
+        pipeline = self.redis.pipeline()
+        pipeline.incr(key)
+        pipeline.expire(key, expire_seconds, nx=True)
+        result = await pipeline.execute()
+        return int(result[0])
+
 
 redis_cache = RedisCache(settings.redis_url)
