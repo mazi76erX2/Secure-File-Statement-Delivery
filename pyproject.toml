@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "anyio>=4.12.1",
     "faker>=37.0.0",
     "fastapi-debug-toolbar>=0.6.3",
     "mypy>=1.19.1",

@@ -32,6 +32,7 @@ def _request(
         "client": (client_host, 12345),
         "server": ("testserver", 80),
         "scheme": "http",
+        "router": statements_module.router,
     }
     return Request(scope)
 
@@ -118,6 +119,51 @@ class _RevokeSession(_FakeSession):
         if model is StatementDownloadLink:
             return self._link
         return await super().get(model, _id)
+
+
+class _BulkLinksSession(_FakeSession):
+    def __init__(self) -> None:
+        super().__init__()
+        self._next_link_id = 100
+
+    async def get(self, model, _id):
+        if model is Customer:
+            return Customer(
+                id=1,
+                full_name="Bulk User",
+                email="bulk@example.com",
+                id_number_hash=hash_secret("9001015009087"),
+                pdf_salt="a" * 64,
+            )
+        return await super().get(model, _id)
+
+    async def scalars(self, *_args, **_kwargs):
+        statement = AccountStatement(
+            id=2,
+            customer_id=1,
+            account_number_last4="5678",
+            statement_period_start=date(2026, 2, 1),
+            statement_period_end=date(2026, 2, 28),
+            file_name="bulk.pdf",
+            file_path="statements/1/bulk.pdf",
+            content_type="application/pdf",
+            file_size_bytes=123,
+            checksum_sha256=None,
+        )
+        return [statement]
+
+    def add(self, _obj) -> None:
+        if isinstance(_obj, StatementDownloadLink):
+            now = datetime.now(UTC)
+            _obj.id = self._next_link_id
+            self._next_link_id += 1
+            _obj.download_count = 0
+            _obj.created_at = now
+            _obj.updated_at = now
+        return None
+
+    async def flush(self) -> None:
+        return None
 
 
 @pytest.mark.anyio
@@ -390,3 +436,34 @@ async def test_revoke_download_link_not_found() -> None:
 
     assert exc.value.status_code == 404
     assert exc.value.detail == "Download link not found"
+
+
+@pytest.mark.anyio
+async def test_issue_month_range_links_endpoint_still_works() -> None:
+    fake_session = cast(AsyncSession, _BulkLinksSession())
+
+    response = await statements_module.issue_month_range_links(
+        customer_id=1,
+        payload=statements_module.StatementDownloadLinkCreate(
+            expires_in_seconds=3600,
+            max_downloads=2,
+        ),
+        request=_request(),
+        from_month="2026-02",
+        to_month="2026-02",
+        _auth=None,
+        session=fake_session,
+    )
+
+    assert len(response) == 1
+    assert response[0].statement_id == 2
+
+
+def test_month_range_links_route_has_distinct_path() -> None:
+    paths = {
+        route.path
+        for route in statements_module.router.routes
+        if "POST" in getattr(route, "methods", set())
+    }
+    assert any(path.endswith("/{statement_id}/links") for path in paths)
+    assert any(path.endswith("/{customer_id}/links/bulk") for path in paths)

@@ -16,7 +16,7 @@ def main() -> None:
     output = service.create_password_protected_statement(payload, id_number)
     print(f"Created: {output}")
     print(f"Size: {output.stat().st_size} bytes")
-    print("Password is the SA ID number used in script.")
+    print("Password is PBKDF2-derived from the SA ID used in script.")
 
 
 if __name__ == "__main__":

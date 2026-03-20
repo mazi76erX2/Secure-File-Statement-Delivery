@@ -237,6 +237,18 @@ Response:
 }
 ```
 
+For month-range issuance:
+
+```bash
+curl -X POST "http://localhost:8000/statements/1/links/bulk?from_month=2026-01&to_month=2026-03" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $STATEMENT_API_KEY" \
+  -d '{
+    "expires_in_seconds": 3600,
+    "max_downloads": 3
+  }'
+```
+
 ### 5. Download Statement (Customer)
 
 The customer uses the `X-ID-Number` header with their ID number to open the PDF:
@@ -264,7 +276,7 @@ curl -X PATCH http://localhost:8000/statements/links/1/revoke \
 | POST | `/statements/{customer_id}/upload` | X-API-Key | Upload PDF statement |
 | GET | `/statements/{customer_id}` | X-API-Key | List customer statements |
 | POST | `/statements/{statement_id}/links` | X-API-Key | Issue download link |
-| POST | `/statements/{customer_id}/links` | X-API-Key | Issue links for month range |
+| POST | `/statements/{customer_id}/links/bulk` | X-API-Key | Issue links for month range |
 | PATCH | `/statements/links/{link_id}/revoke` | X-API-Key | Revoke download link |
 | GET | `/statements/download/{token}` | X-ID-Number | Download encrypted PDF |
 

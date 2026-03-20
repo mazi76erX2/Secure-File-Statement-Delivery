@@ -375,7 +375,7 @@ async def list_customer_statements(
 
 
 @router.post(
-    "/{customer_id}/links",
+    "/{customer_id}/links/bulk",
     response_model=list[StatementDownloadLinkIssued],
     status_code=status.HTTP_201_CREATED,
 )

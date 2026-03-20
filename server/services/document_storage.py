@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol, TypedDict, cast
+from typing import Protocol, TypedDict, cast
 
 
 class _S3BodyReader(Protocol):
@@ -23,6 +23,20 @@ class _S3Client(Protocol):
     def get_object(self, *, Bucket: str, Key: str) -> _S3GetObjectResponse: ...
 
 
+class _AzureBlobDownloader(Protocol):
+    def readall(self) -> bytes: ...
+
+
+class _AzureBlobClient(Protocol):
+    def download_blob(self) -> _AzureBlobDownloader: ...
+
+
+class _AzureBlobContainerClient(Protocol):
+    def upload_blob(self, *, name: str, data: bytes, overwrite: bool) -> object: ...
+
+    def get_blob_client(self, blob: str) -> _AzureBlobClient: ...
+
+
 class StorageConfigurationError(ValueError):
     """Raised when the storage backend is misconfigured."""
 
@@ -38,7 +52,7 @@ class DocumentStorageService:
         self.prefix = str(getattr(settings, "storage_prefix", "statements")).strip("/")
 
         self._s3_client: _S3Client | None = None
-        self._blob_container_client: Any | None = None
+        self._blob_container_client: _AzureBlobContainerClient | None = None
 
     def save_pdf(self, content: bytes, customer_id: int, file_name: str) -> str:
         object_key = self._build_object_key(customer_id, file_name)
@@ -200,7 +214,7 @@ class DocumentStorageService:
         )
         return self._s3_client
 
-    def _get_blob_container_client(self):
+    def _get_blob_container_client(self) -> _AzureBlobContainerClient:
         if self._blob_container_client is not None:
             return self._blob_container_client
 
@@ -217,5 +231,7 @@ class DocumentStorageService:
             service = BlobServiceClient(account_url=account_url, credential=account_key)
 
         container = self._require_setting("azure_storage_container")
-        self._blob_container_client = service.get_container_client(container)
+        self._blob_container_client = cast(
+            _AzureBlobContainerClient, service.get_container_client(container)
+        )
         return self._blob_container_client

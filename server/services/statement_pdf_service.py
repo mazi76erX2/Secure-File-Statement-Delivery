@@ -5,11 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 try:
-    from security import encrypt_pdf_content
+    from security import derive_pdf_password, encrypt_pdf_content, generate_pdf_salt
     from utils.sa_id import validate_sa_id
     from utils.statement_pdf import AccountStatementPdf, StatementDocumentData
 except ImportError:  # pragma: no cover
-    from server.security import encrypt_pdf_content
+    from server.security import (
+        derive_pdf_password,
+        encrypt_pdf_content,
+        generate_pdf_salt,
+    )
     from server.utils.sa_id import validate_sa_id
     from server.utils.statement_pdf import AccountStatementPdf, StatementDocumentData
 
@@ -29,7 +33,8 @@ class StatementPdfService:
 
         generator = AccountStatementPdf()
         raw_pdf = generator.render(payload)
-        encrypted_pdf = encrypt_pdf_content(raw_pdf, id_number)
+        pdf_password = derive_pdf_password(id_number, generate_pdf_salt())
+        encrypted_pdf = encrypt_pdf_content(raw_pdf, pdf_password)
 
         output_path = self.output_dir / "account_statement.pdf"
         output_path.write_bytes(encrypted_pdf)

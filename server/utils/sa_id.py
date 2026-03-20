@@ -17,9 +17,10 @@ def validate_sa_id(id_number: str) -> bool:
 
     odd_sum = sum(digits[0:12:2])
 
-    even_digits = "".join(str(d) for d in digits[1:12:2])
-    doubled = str(int(even_digits) * 2).zfill(len(even_digits) + 1)
-    even_sum = sum(int(char) for char in doubled)
+    even_sum = sum(
+        doubled if doubled < 10 else doubled - 9
+        for doubled in (digit * 2 for digit in digits[1:12:2])
+    )
 
     total = odd_sum + even_sum
     calc_check = (10 - (total % 10)) % 10
