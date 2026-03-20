@@ -4,7 +4,23 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, TypedDict, cast
+
+
+class _S3BodyReader(Protocol):
+    def read(self) -> bytes: ...
+
+
+class _S3GetObjectResponse(TypedDict):
+    Body: _S3BodyReader
+
+
+class _S3Client(Protocol):
+    def put_object(
+        self, *, Bucket: str, Key: str, Body: bytes, ContentType: str
+    ) -> object: ...
+
+    def get_object(self, *, Bucket: str, Key: str) -> _S3GetObjectResponse: ...
 
 
 class StorageConfigurationError(ValueError):
@@ -21,7 +37,7 @@ class DocumentStorageService:
         self.provider = str(getattr(settings, "storage_provider", "local")).lower()
         self.prefix = str(getattr(settings, "storage_prefix", "statements")).strip("/")
 
-        self._s3_client: Any | None = None
+        self._s3_client: _S3Client | None = None
         self._blob_container_client: Any | None = None
 
     def save_pdf(self, content: bytes, customer_id: int, file_name: str) -> str:
@@ -151,30 +167,36 @@ class DocumentStorageService:
             raise FileNotFoundError("Statement file is unavailable") from exc
         return candidate
 
-    def _get_s3_client(self):
+    def _get_s3_client(self) -> _S3Client:
         if self._s3_client is not None:
             return self._s3_client
 
         import boto3
 
         if self.provider == "aws":
-            self._s3_client = boto3.client(
-                "s3",
-                region_name=getattr(self.settings, "aws_region", None),
-                aws_access_key_id=getattr(self.settings, "aws_access_key_id", None),
-                aws_secret_access_key=getattr(
-                    self.settings, "aws_secret_access_key", None
+            self._s3_client = cast(
+                _S3Client,
+                boto3.client(
+                    "s3",
+                    region_name=getattr(self.settings, "aws_region", None),
+                    aws_access_key_id=getattr(self.settings, "aws_access_key_id", None),
+                    aws_secret_access_key=getattr(
+                        self.settings, "aws_secret_access_key", None
+                    ),
                 ),
             )
             return self._s3_client
 
-        self._s3_client = boto3.client(
-            "s3",
-            endpoint_url=self._require_setting("minio_endpoint_url"),
-            aws_access_key_id=self._require_setting("minio_access_key"),
-            aws_secret_access_key=self._require_setting("minio_secret_key"),
-            use_ssl=bool(getattr(self.settings, "minio_secure", True)),
-            region_name=getattr(self.settings, "aws_region", "us-east-1"),
+        self._s3_client = cast(
+            _S3Client,
+            boto3.client(
+                "s3",
+                endpoint_url=self._require_setting("minio_endpoint_url"),
+                aws_access_key_id=self._require_setting("minio_access_key"),
+                aws_secret_access_key=self._require_setting("minio_secret_key"),
+                use_ssl=bool(getattr(self.settings, "minio_secure", True)),
+                region_name=getattr(self.settings, "aws_region", "us-east-1"),
+            ),
         )
         return self._s3_client
 

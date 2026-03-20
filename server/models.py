@@ -32,6 +32,7 @@ class Customer(Base, TimestampMixin):
         String(255), unique=True, index=True, nullable=False
     )
     id_number_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pdf_salt: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     statements: Mapped[list[AccountStatement]] = relationship(
         back_populates="customer", cascade="all, delete-orphan"

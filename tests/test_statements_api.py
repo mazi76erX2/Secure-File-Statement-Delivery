@@ -42,9 +42,11 @@ class _FakeSession:
         *,
         file_path: str = "statements/1/statement.pdf",
         checksum_sha256: str | None = "a" * 64,
+        customer_pdf_salt: str | None = "a" * 64,
     ) -> None:
         self._file_path = file_path
         self._checksum_sha256 = checksum_sha256
+        self._customer_pdf_salt = customer_pdf_salt
 
     async def scalar(self, *_args, **_kwargs) -> StatementDownloadLink:
         return StatementDownloadLink(
@@ -76,10 +78,14 @@ class _FakeSession:
                 full_name="Test User",
                 email="test@example.com",
                 id_number_hash=hash_secret("9001015009087"),
+                pdf_salt=self._customer_pdf_salt,
             )
         return None
 
     async def commit(self) -> None:
+        return None
+
+    async def refresh(self, _instance) -> None:
         return None
 
 
@@ -89,6 +95,29 @@ def _pdf_upload_file(content: bytes, filename: str = "statement.pdf") -> UploadF
         filename=filename,
         headers=Headers({"content-type": "application/pdf"}),
     )
+
+
+def _fake_download_link(*, revoked_at: datetime | None = None) -> StatementDownloadLink:
+    return StatementDownloadLink(
+        id=1,
+        statement_id=1,
+        token_hash="token-hash",
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        max_downloads=2,
+        download_count=0,
+        revoked_at=revoked_at,
+    )
+
+
+class _RevokeSession(_FakeSession):
+    def __init__(self, link: StatementDownloadLink | None) -> None:
+        super().__init__()
+        self._link = link
+
+    async def get(self, model, _id):
+        if model is StatementDownloadLink:
+            return self._link
+        return await super().get(model, _id)
 
 
 @pytest.mark.anyio
@@ -225,3 +254,139 @@ async def test_download_returns_404_when_storage_file_missing(
 
     assert exc.value.status_code == 404
     assert exc.value.detail == "Statement file is unavailable"
+
+
+@pytest.mark.anyio
+async def test_download_uses_derived_pdf_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_session = cast(AsyncSession, _FakeSession(checksum_sha256=None))
+
+    async def _fake_rate_limit(_request: Request) -> None:
+        return None
+
+    def _fake_read_pdf(_path: str) -> bytes:
+        return b"%PDF-1.4\nmock"
+
+    def _fake_derive_pdf_password(
+        _id_number: str,
+        _pdf_salt_hex: str,
+        _iterations: int = 600_000,
+    ) -> str:
+        return "derived-password"
+
+    def _fake_encrypt_pdf_content(_pdf_content: bytes, password: str) -> bytes:
+        assert password == "derived-password"
+        return b"%PDF-1.7\nencrypted"
+
+    monkeypatch.setattr(
+        statements_module, "_enforce_download_rate_limit", _fake_rate_limit
+    )
+    monkeypatch.setattr(statements_module.storage_service, "read_pdf", _fake_read_pdf)
+    monkeypatch.setattr(statements_module, "verify_secret", lambda *_args: True)
+    monkeypatch.setattr(
+        statements_module,
+        "derive_pdf_password",
+        _fake_derive_pdf_password,
+    )
+    monkeypatch.setattr(
+        statements_module,
+        "encrypt_pdf_content",
+        _fake_encrypt_pdf_content,
+    )
+
+    response = await statements_module.download_statement(
+        token="test-token",
+        request=_request(),
+        x_id_number="9001015009087",
+        session=fake_session,
+    )
+
+    assert response.status_code == 200
+    assert response.body.startswith(b"%PDF-1.7")
+
+
+@pytest.mark.anyio
+async def test_download_generates_missing_pdf_salt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_session = cast(
+        AsyncSession,
+        _FakeSession(checksum_sha256=None, customer_pdf_salt=None),
+    )
+
+    async def _fake_rate_limit(_request: Request) -> None:
+        return None
+
+    def _fake_read_pdf(_path: str) -> bytes:
+        return b"%PDF-1.4\nmock"
+
+    def _fake_generate_pdf_salt() -> str:
+        return "b" * 64
+
+    monkeypatch.setattr(
+        statements_module, "_enforce_download_rate_limit", _fake_rate_limit
+    )
+    monkeypatch.setattr(statements_module.storage_service, "read_pdf", _fake_read_pdf)
+    monkeypatch.setattr(statements_module, "verify_secret", lambda *_args: True)
+    monkeypatch.setattr(
+        statements_module,
+        "generate_pdf_salt",
+        _fake_generate_pdf_salt,
+    )
+
+    def _fake_derive_pdf_password(
+        _id_number: str,
+        pdf_salt_hex: str,
+        _iterations: int = 600_000,
+    ) -> str:
+        assert pdf_salt_hex == "b" * 64
+        return "derived-password"
+
+    monkeypatch.setattr(
+        statements_module, "derive_pdf_password", _fake_derive_pdf_password
+    )
+    monkeypatch.setattr(
+        statements_module,
+        "encrypt_pdf_content",
+        lambda *_args: b"%PDF-1.7\nencrypted",
+    )
+
+    response = await statements_module.download_statement(
+        token="test-token",
+        request=_request(),
+        x_id_number="9001015009087",
+        session=fake_session,
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_revoke_download_link_sets_timestamp() -> None:
+    link = _fake_download_link()
+    fake_session = cast(AsyncSession, _RevokeSession(link))
+
+    response = await statements_module.revoke_download_link(
+        link_id=1,
+        _auth=None,
+        session=fake_session,
+    )
+
+    assert response.id == 1
+    assert response.revoked_at is not None
+
+
+@pytest.mark.anyio
+async def test_revoke_download_link_not_found() -> None:
+    fake_session = cast(AsyncSession, _RevokeSession(None))
+
+    with pytest.raises(HTTPException) as exc:
+        await statements_module.revoke_download_link(
+            link_id=99,
+            _auth=None,
+            session=fake_session,
+        )
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Download link not found"

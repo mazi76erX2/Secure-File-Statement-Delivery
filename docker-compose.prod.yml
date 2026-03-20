@@ -6,13 +6,8 @@ services:
       dockerfile: docker/Dockerfile.prod
     environment:
       - FASTAPI_ENV=prod
-    ports:
-      - 8000:8000
     expose:
       - 8000
-    volumes:
-      - ./:/app:rw
-      - /app/.venv
     depends_on:
       - db
       - redis

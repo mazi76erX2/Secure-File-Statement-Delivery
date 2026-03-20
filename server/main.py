@@ -8,7 +8,6 @@ from api import api_router
 from cache import redis_cache
 from config import configure_logging, settings
 from database import engine
-from debug_toolbar.middleware import DebugToolbarMiddleware
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -40,6 +39,8 @@ app.add_middleware(
 )
 
 if settings.debug and settings.enable_debug_toolbar:
+    from debug_toolbar.middleware import DebugToolbarMiddleware
+
     # Cast to Any because the third-party middleware has incomplete type hints.
     app.add_middleware(
         DebugToolbarMiddleware,  # type: ignore[arg-type]

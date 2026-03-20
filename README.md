@@ -1,6 +1,6 @@
 # Secure File Statement Delivery
 
-Secure FastAPI backend for storing account statement PDFs and issuing time-limited download links. Downloaded PDFs are encrypted with the customer ID number so only the intended customer can open them.
+Secure FastAPI backend for storing account statement PDFs and issuing time-limited download links. Downloaded PDFs are encrypted using a password derived from the customer ID number and a per-customer salt so only the intended customer can open them.
 
 ## Core capabilities
 
@@ -9,7 +9,7 @@ Secure FastAPI backend for storing account statement PDFs and issuing time-limit
 - Pluggable storage backends: local, AWS S3, Azure Blob, MinIO
 - One-time or limited-use signed download links
 - Time-limited links with revocation and download counters
-- ID-based PDF encryption at download time
+- ID + salt derived PDF encryption at download time
 
 ## Architecture overview
 
@@ -26,7 +26,7 @@ Secure FastAPI backend for storing account statement PDFs and issuing time-limit
 3. API generates a random token and stores only its hash.
 4. Customer calls `/statements/download/{token}` with `X-ID-Number`.
 5. API verifies link validity and ID hash.
-6. API encrypts PDF bytes with that ID before returning file.
+6. API derives a PDF password using PBKDF2 (ID + customer salt) and encrypts the bytes before returning the file.
 
 ## Prerequisites
 
@@ -65,6 +65,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 Entry endpoint: `http://localhost:1337`
+
+In production compose, only Nginx is exposed publicly. The backend service stays internal on the Docker network.
 
 ## LGTM observability stack (Docker)
 
@@ -237,7 +239,7 @@ Response:
 
 ### 5. Download Statement (Customer)
 
-The customer uses the `X-ID-Number` header with their ID number to decrypt the PDF:
+The customer uses the `X-ID-Number` header with their ID number to open the PDF:
 
 ```bash
 curl -X GET "http://localhost:8000/statements/download/secure-random-token-here" \
@@ -245,7 +247,14 @@ curl -X GET "http://localhost:8000/statements/download/secure-random-token-here"
   --output my-statement.pdf
 ```
 
-The returned PDF is encrypted with the customer's ID number as the password.
+The returned PDF is encrypted using a password derived from the customer's ID number and a per-customer salt.
+
+### 6. Revoke a Download Link (Admin)
+
+```bash
+curl -X PATCH http://localhost:8000/statements/links/1/revoke \
+  -H "X-API-Key: $STATEMENT_API_KEY"
+```
 
 ## API Endpoints Reference
 
@@ -256,6 +265,7 @@ The returned PDF is encrypted with the customer's ID number as the password.
 | GET | `/statements/{customer_id}` | X-API-Key | List customer statements |
 | POST | `/statements/{statement_id}/links` | X-API-Key | Issue download link |
 | POST | `/statements/{customer_id}/links` | X-API-Key | Issue links for month range |
+| PATCH | `/statements/links/{link_id}/revoke` | X-API-Key | Revoke download link |
 | GET | `/statements/download/{token}` | X-ID-Number | Download encrypted PDF |
 
 ## Testing
@@ -386,6 +396,7 @@ uv run pre-commit run --all-files
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `CORS_ALLOW_ORIGINS` | - | Comma-separated allowed origins |
 | `MAX_STATEMENT_FILE_SIZE_BYTES` | `10485760` | Maximum upload size in bytes |
+| `PDF_PASSWORD_KDF_ITERATIONS` | `600000` | PBKDF2 iterations for deriving per-customer PDF encryption password |
 | `STATEMENT_DOWNLOAD_RATE_LIMIT_REQUESTS` | `10` | Max download attempts per client IP per window |
 | `STATEMENT_DOWNLOAD_RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate-limit window size in seconds |
 | `TRUST_PROXY_HEADERS` | `false` | Trust `X-Forwarded-For` for client IP extraction |
@@ -465,7 +476,7 @@ For EKS deployment with ArgoCD:
 
 The repository includes GitHub Actions workflows for continuous integration.
 
-### Workflow: Format and Lint
+### Workflow: Format, Lint, Type-check, Test
 
 **Triggers:** Push/PR to `main` or `master`
 
@@ -478,6 +489,7 @@ The repository includes GitHub Actions workflows for continuous integration.
 5. Format check (`ruff format --check .`)
 6. Lint (`ruff check .`)
 7. Type check (`mypy server`)
+8. Test suite (`pytest`)
 
 ### Running CI Checks Locally
 
@@ -486,6 +498,7 @@ The repository includes GitHub Actions workflows for continuous integration.
 uv run ruff format --check .
 uv run ruff check .
 uv run mypy server
+uv run pytest
 ```
 
 ## Troubleshooting

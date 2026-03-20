@@ -31,3 +31,6 @@ jobs:
 
       - name: Type check
         run: uv run mypy server
+
+      - name: Run tests
+        run: uv run pytest

@@ -14,6 +14,33 @@ class InvalidPdfError(ValueError):
     """Raised when stored PDF content cannot be encrypted safely."""
 
 
+def generate_pdf_salt() -> str:
+    return secrets.token_hex(32)
+
+
+def derive_pdf_password(
+    id_number: str, pdf_salt_hex: str, iterations: int = 600_000
+) -> str:
+    if iterations <= 0:
+        raise ValueError("PDF key derivation iterations must be positive")
+
+    try:
+        pdf_salt = bytes.fromhex(pdf_salt_hex)
+    except ValueError as exc:
+        raise ValueError("PDF key derivation salt must be hex-encoded") from exc
+
+    if len(pdf_salt) != 32:
+        raise ValueError("PDF key derivation salt must be exactly 32 bytes")
+
+    derived = hashlib.pbkdf2_hmac(
+        "sha256",
+        id_number.encode("utf-8"),
+        pdf_salt,
+        iterations,
+    )
+    return derived.hex()
+
+
 def hash_secret(secret: str, iterations: int = 300_000) -> str:
     salt = secrets.token_bytes(16)
     derived = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), salt, iterations)

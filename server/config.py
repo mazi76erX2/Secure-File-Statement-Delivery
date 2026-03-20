@@ -44,6 +44,7 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000", "http://localhost:8000"]
     )
     max_statement_file_size_bytes: int = 10 * 1024 * 1024
+    pdf_password_kdf_iterations: int = Field(default=600_000, ge=1)
     statement_download_rate_limit_requests: int = 10
     statement_download_rate_limit_window_seconds: int = 60
     trust_proxy_headers: bool = False

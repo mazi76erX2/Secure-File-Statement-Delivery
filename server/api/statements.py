@@ -32,8 +32,15 @@ from schemas import (
     CustomerResponse,
     StatementDownloadLinkCreate,
     StatementDownloadLinkIssued,
+    StatementDownloadLinkResponse,
 )
-from security import encrypt_pdf_content, hash_secret, verify_secret
+from security import (
+    derive_pdf_password,
+    encrypt_pdf_content,
+    generate_pdf_salt,
+    hash_secret,
+    verify_secret,
+)
 from services.document_storage import (
     DocumentStorageService,
     StorageConfigurationError,
@@ -195,6 +202,7 @@ async def create_customer(
         full_name=payload.full_name,
         email=payload.email,
         id_number_hash=hash_secret(payload.id_number),
+        pdf_salt=generate_pdf_salt(),
     )
     session.add(customer)
     await session.commit()
@@ -434,6 +442,27 @@ async def issue_month_range_links(
     return response_payload
 
 
+@router.patch(
+    "/links/{link_id}/revoke",
+    response_model=StatementDownloadLinkResponse,
+)
+async def revoke_download_link(
+    link_id: int,
+    _auth: None = Depends(require_admin_api_key),
+    session: AsyncSession = Depends(get_session),
+) -> StatementDownloadLink:
+    link = await session.get(StatementDownloadLink, link_id)
+    if not link:
+        raise HTTPException(status_code=404, detail="Download link not found")
+
+    if link.revoked_at is None:
+        link.revoked_at = datetime.now(UTC)
+        await session.commit()
+        await session.refresh(link)
+
+    return link
+
+
 @router.get("/download/{token}", name="download_statement")
 async def download_statement(
     token: str,
@@ -481,6 +510,8 @@ async def download_statement(
         raise HTTPException(
             status_code=401, detail="Invalid or missing customer ID number"
         )
+    if not customer.pdf_salt:
+        customer.pdf_salt = generate_pdf_salt()
 
     try:
         raw_pdf = await run_in_threadpool(storage_service.read_pdf, statement.file_path)
@@ -506,8 +537,20 @@ async def download_statement(
                 detail="Statement integrity check failed",
             )
     try:
+        pdf_password = await run_in_threadpool(
+            derive_pdf_password,
+            provided_id_number,
+            customer.pdf_salt,
+            settings.pdf_password_kdf_iterations,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Customer statement encryption configuration is invalid",
+        ) from exc
+    try:
         protected_pdf = await run_in_threadpool(
-            encrypt_pdf_content, raw_pdf, provided_id_number
+            encrypt_pdf_content, raw_pdf, pdf_password
         )
     except ValueError as exc:
         raise HTTPException(
