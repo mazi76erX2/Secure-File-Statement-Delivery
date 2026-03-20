@@ -13,9 +13,11 @@ def main() -> None:
     payload = generate_fake_statement_data(transaction_count=100)
     service = StatementPdfService(output_dir=Path("/tmp/statement-output"))
 
-    output = service.create_password_protected_statement(payload, id_number)
-    print(f"Created: {output}")
-    print(f"Size: {output.stat().st_size} bytes")
+    result = service.create_password_protected_statement(payload, id_number)
+    print(f"Created: {result.output_path}")
+    print(f"Size: {result.output_path.stat().st_size} bytes")
+    print(f"Salt (hex): {result.pdf_salt}")
+    print(f"Derived password (hex): {result.pdf_password}")
     print("Password is PBKDF2-derived from the SA ID used in script.")
 
 
