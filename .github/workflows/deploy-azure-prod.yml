@@ -148,6 +148,22 @@ jobs:
         with:
           creds: ${{ steps.azure_creds.outputs.normalized }}
 
+      - name: Configure Terraform backend credentials
+        run: |
+          echo "ARM_CLIENT_ID=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['clientId'])")" >> "$GITHUB_ENV"
+          echo "ARM_CLIENT_SECRET=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['clientSecret'])")" >> "$GITHUB_ENV"
+          echo "ARM_TENANT_ID=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['tenantId'])")" >> "$GITHUB_ENV"
+          echo "ARM_SUBSCRIPTION_ID=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['subscriptionId'])")" >> "$GITHUB_ENV"
+
+      - name: Register Azure resource providers
+        run: |
+          set -euo pipefail
+          az provider register --namespace Microsoft.App --wait
+          az provider register --namespace Microsoft.OperationalInsights --wait
+          az provider register --namespace Microsoft.Storage --wait
+          az provider register --namespace Microsoft.KeyVault --wait
+          az provider register --namespace Microsoft.DBforPostgreSQL --wait
+
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v1
         with:
@@ -176,6 +192,7 @@ jobs:
           TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
         run: |
           tofu init -input=false
+
           tofu apply -input=false -auto-approve \
             -target=azurerm_resource_group.statements \
             -target=azurerm_container_registry.main
@@ -231,6 +248,7 @@ jobs:
           TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
         run: |
           tofu init -input=false
+
           tofu apply -input=false -auto-approve
 
       - name: Print app URL
