@@ -49,7 +49,7 @@ Stop:
 docker compose down -v
 ```
 
-## Production container run
+## Production-like local run (Docker Compose)
 
 Build production image:
 
@@ -57,7 +57,7 @@ Build production image:
 docker build -f docker/Dockerfile.prod -t secure-statement-api:prod .
 ```
 
-Run full production compose (API + Postgres + Redis + Nginx):
+Run full production compose locally (API + Postgres + Redis + Nginx):
 
 ```bash
 cp .env.example .env
@@ -67,6 +67,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 Entry endpoint: `http://localhost:1337`
 
 In production compose, only Nginx is exposed publicly. The backend service stays internal on the Docker network.
+
+This is intended for local smoke testing. Azure production uses a single app container image with managed Postgres/Redis/Blob services.
 
 ## LGTM observability stack (Docker)
 
@@ -128,6 +130,64 @@ tofu plan \
 ```
 
 For MinIO without KMS, keep `enable_bucket_encryption=false` (default).
+
+### Azure production deployment (Docker image + managed services)
+
+Use this split model:
+
+- Local development: `docker-compose.yml` (unchanged)
+- Azure production app runtime: Azure Container Apps
+- Azure managed dependencies: PostgreSQL Flexible Server, Azure Cache for Redis, Azure Blob Storage
+- Image registry: Azure Container Registry (ACR)
+- Secrets: Azure Key Vault + GitHub Actions secrets
+
+#### 1) Required GitHub repository secrets
+
+- `AZURE_CREDENTIALS` (service principal JSON for `azure/login`)
+- `AZURE_RESOURCE_GROUP_NAME`
+- `AZURE_LOCATION` (for example `southafricanorth`)
+- `AZURE_STORAGE_ACCOUNT_NAME` (globally unique)
+- `AZURE_STORAGE_CONTAINER_NAME` (for example `statements`)
+- `AZURE_ACR_NAME` (globally unique, alphanumeric)
+- `AZURE_KEY_VAULT_NAME` (globally unique)
+- `AZURE_POSTGRES_SERVER_NAME` (globally unique)
+- `AZURE_REDIS_NAME` (globally unique)
+- `AZURE_LOG_ANALYTICS_WORKSPACE_NAME`
+- `AZURE_CONTAINER_APP_ENV_NAME`
+- `AZURE_CONTAINER_APP_NAME`
+- `STATEMENT_API_KEY`
+- `AZURE_DB_PASSWORD`
+
+Optional GitHub Actions variables:
+
+- `PDF_PASSWORD_KDF_ITERATIONS` (default `600000`)
+- `LOG_LEVEL` (default `INFO`)
+
+#### 2) Azure Terraform resources
+
+`infra/terraform/azure` now provisions:
+
+- Resource Group
+- ACR
+- Key Vault + secrets (deployment-time values)
+- PostgreSQL Flexible Server + database + Azure firewall rule
+- Azure Cache for Redis (SSL-only)
+- Blob Storage account + private container
+- Log Analytics Workspace
+- Container Apps Environment
+- Container App for the API
+
+#### 3) Deploy via GitHub Actions
+
+Use workflow: `.github/workflows/deploy-azure-prod.yml`
+
+- On push to `main`/`master`, or manual dispatch
+- Provisions infra with OpenTofu
+- Builds `docker/Dockerfile.prod`
+- Pushes image to ACR
+- Applies Terraform again with the pushed image reference
+
+The workflow prints the deployed API URL from Terraform output.
 
 ## Local quality checks
 
@@ -379,10 +439,15 @@ uv run pre-commit run --all-files
 | `DATABASE_PASSWORD` | - | Database password |
 | `DATABASE_HOST` | `db` | Database hostname |
 | `DATABASE_PORT` | `5432` | Database port |
+| `DATABASE_SSL_MODE` | `disable` | DB SSL mode: `disable` or `require` |
 | **Cache** | | |
 | `CACHE_HOST` | `redis` | Redis hostname |
 | `CACHE_PORT` | `6379` | Redis port |
 | `CACHE_DB` | `0` | Redis database number |
+| `CACHE_USERNAME` | - | Redis username (optional) |
+| `CACHE_PASSWORD` | - | Redis password (optional) |
+| `CACHE_USE_SSL` | `false` | Use `rediss://` for Redis |
+| `CACHE_SSL_CERT_REQS` | `required` | Redis TLS cert mode: `none`, `optional`, `required` |
 | **Storage** | | |
 | `STORAGE_PROVIDER` | `local` | Backend: `local`, `aws`, `azure`, `minio` |
 | `STORAGE_BUCKET_NAME` | - | S3/Azure/MinIO bucket name |
@@ -580,6 +645,15 @@ permission denied: /loki/wal
 docker compose -f docker-compose.lgtm.yml down -v
 docker compose -f docker-compose.lgtm.yml up -d
 ```
+
+### Azure Postgres/Redis connectivity issues
+
+If running in Azure with managed services:
+
+- Ensure `DATABASE_SSL_MODE=require`
+- Ensure `CACHE_USE_SSL=true`
+- Ensure `CACHE_PORT=6380` and `CACHE_PASSWORD` is set from Azure Redis access key
+- Keep `CACHE_SSL_CERT_REQS=required` unless troubleshooting certificates in non-production environments
 
 ### Database Migration Errors
 

@@ -1141,7 +1141,7 @@ wheels = [
 ]
 
 [[package]]
-name = "secure-file-statemtent-delivery-api"
+name = "secure-file-statement-delivery-api"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

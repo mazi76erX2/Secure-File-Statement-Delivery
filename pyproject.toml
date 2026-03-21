@@ -1,5 +1,5 @@
 [project]
-name = "secure-file-statemtent-delivery-api"
+name = "secure-file-statement-delivery-api"
 version = "0.1.0"
 description = "Secure File Statement Delivery API built with FastAPI, SQLAlchemy, and Redis."
 readme = "README.md"

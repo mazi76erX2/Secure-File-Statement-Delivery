@@ -1,0 +1,120 @@
+name: Deploy Azure Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy"
+        required: false
+        default: "latest"
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  IMAGE_NAME: secure-statement-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.8.5"
+
+      - name: Bootstrap ACR
+        working-directory: infra/terraform/azure
+        env:
+          TF_VAR_resource_group_name: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+          TF_VAR_environment: prod
+          TF_VAR_location: ${{ secrets.AZURE_LOCATION }}
+          TF_VAR_storage_account_name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          TF_VAR_container_name: ${{ secrets.AZURE_STORAGE_CONTAINER_NAME }}
+          TF_VAR_acr_name: ${{ secrets.AZURE_ACR_NAME }}
+          TF_VAR_key_vault_name: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+          TF_VAR_postgres_server_name: ${{ secrets.AZURE_POSTGRES_SERVER_NAME }}
+          TF_VAR_redis_name: ${{ secrets.AZURE_REDIS_NAME }}
+          TF_VAR_log_analytics_workspace_name: ${{ secrets.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
+          TF_VAR_container_app_environment_name: ${{ secrets.AZURE_CONTAINER_APP_ENV_NAME }}
+          TF_VAR_container_app_name: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
+          TF_VAR_app_image: "${{ secrets.AZURE_ACR_NAME }}.azurecr.io/secure-statement-api:bootstrap"
+          TF_VAR_statement_api_key: ${{ secrets.STATEMENT_API_KEY }}
+          TF_VAR_db_password: ${{ secrets.AZURE_DB_PASSWORD }}
+          TF_VAR_pdf_password_kdf_iterations: ${{ vars.PDF_PASSWORD_KDF_ITERATIONS || 600000 }}
+          TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
+        run: |
+          tofu init
+          tofu apply -auto-approve \
+            -target=azurerm_resource_group.statements \
+            -target=azurerm_container_registry.main
+
+      - name: Resolve ACR login server
+        id: acr
+        run: |
+          ACR_LOGIN_SERVER="$(az acr show --name "${{ secrets.AZURE_ACR_NAME }}" --resource-group "${{ secrets.AZURE_RESOURCE_GROUP_NAME }}" --query loginServer -o tsv)"
+          echo "login_server=$ACR_LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve image tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="${GITHUB_SHA::12}"
+          fi
+          echo "value=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        env:
+          ACR_LOGIN_SERVER: ${{ steps.acr.outputs.login_server }}
+          IMAGE_TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          az acr login --name "${{ secrets.AZURE_ACR_NAME }}"
+          docker build -f docker/Dockerfile.prod -t "$ACR_LOGIN_SERVER/${IMAGE_NAME}:$IMAGE_TAG" .
+          docker push "$ACR_LOGIN_SERVER/${IMAGE_NAME}:$IMAGE_TAG"
+          echo "IMAGE_URI=$ACR_LOGIN_SERVER/${IMAGE_NAME}:$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Deploy app revision with image
+        working-directory: infra/terraform/azure
+        env:
+          TF_VAR_resource_group_name: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+          TF_VAR_environment: prod
+          TF_VAR_location: ${{ secrets.AZURE_LOCATION }}
+          TF_VAR_storage_account_name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          TF_VAR_container_name: ${{ secrets.AZURE_STORAGE_CONTAINER_NAME }}
+          TF_VAR_acr_name: ${{ secrets.AZURE_ACR_NAME }}
+          TF_VAR_key_vault_name: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+          TF_VAR_postgres_server_name: ${{ secrets.AZURE_POSTGRES_SERVER_NAME }}
+          TF_VAR_redis_name: ${{ secrets.AZURE_REDIS_NAME }}
+          TF_VAR_log_analytics_workspace_name: ${{ secrets.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
+          TF_VAR_container_app_environment_name: ${{ secrets.AZURE_CONTAINER_APP_ENV_NAME }}
+          TF_VAR_container_app_name: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
+          TF_VAR_app_image: ${{ env.IMAGE_URI }}
+          TF_VAR_statement_api_key: ${{ secrets.STATEMENT_API_KEY }}
+          TF_VAR_db_password: ${{ secrets.AZURE_DB_PASSWORD }}
+          TF_VAR_pdf_password_kdf_iterations: ${{ vars.PDF_PASSWORD_KDF_ITERATIONS || 600000 }}
+          TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
+        run: |
+          tofu init
+          tofu apply -auto-approve
+
+      - name: Print app URL
+        working-directory: infra/terraform/azure
+        run: |
+          echo "Container App URL:"
+          tofu output -raw container_app_url
