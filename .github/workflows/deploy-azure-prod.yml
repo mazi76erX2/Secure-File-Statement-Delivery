@@ -25,10 +25,81 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Normalize Azure credentials payload
+        id: azure_creds
+        env:
+          RAW_AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          raw_credentials = os.getenv("RAW_AZURE_CREDENTIALS", "").strip()
+          fallback_subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID", "").strip()
+
+          if not raw_credentials:
+              print("::error::Missing AZURE_CREDENTIALS secret.")
+              print(
+                  "::error::Set AZURE_CREDENTIALS using `az ad sp create-for-rbac --sdk-auth`."
+              )
+              sys.exit(1)
+
+          try:
+              credentials = json.loads(raw_credentials)
+          except json.JSONDecodeError:
+              print("::error::AZURE_CREDENTIALS must be valid JSON.")
+              sys.exit(1)
+
+          client_id = credentials.get("clientId") or credentials.get("appId") or ""
+          client_secret = (
+              credentials.get("clientSecret") or credentials.get("password") or ""
+          )
+          tenant_id = credentials.get("tenantId") or credentials.get("tenant") or ""
+          subscription_id = (
+              credentials.get("subscriptionId") or fallback_subscription_id or ""
+          )
+
+          missing_fields: list[str] = []
+          if not client_id:
+              missing_fields.append("clientId (or appId)")
+          if not client_secret:
+              missing_fields.append("clientSecret (or password)")
+          if not tenant_id:
+              missing_fields.append("tenantId (or tenant)")
+          if not subscription_id:
+              missing_fields.append(
+                  "subscriptionId (or AZURE_SUBSCRIPTION_ID secret)"
+              )
+
+          if missing_fields:
+              print(
+                  "::error::AZURE_CREDENTIALS is missing required fields: "
+                  + ", ".join(missing_fields)
+              )
+              print(
+                  "::error::Use `az ad sp create-for-rbac --sdk-auth` or set AZURE_SUBSCRIPTION_ID."
+              )
+              sys.exit(1)
+
+          normalized_credentials = {
+              "clientId": client_id,
+              "clientSecret": client_secret,
+              "tenantId": tenant_id,
+              "subscriptionId": subscription_id,
+          }
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("normalized<<EOF\n")
+              output.write(json.dumps(normalized_credentials))
+              output.write("\nEOF\n")
+          PY
+
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          creds: ${{ steps.azure_creds.outputs.normalized }}
 
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v1
