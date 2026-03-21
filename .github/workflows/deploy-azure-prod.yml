@@ -193,7 +193,7 @@ jobs:
         run: |
           tofu init -input=false
 
-          tofu apply -input=false -auto-approve \
+          tofu apply -input=false -lock-timeout=10m -auto-approve \
             -target=azurerm_resource_group.statements \
             -target=azurerm_container_registry.main
 
@@ -249,7 +249,7 @@ jobs:
         run: |
           tofu init -input=false
 
-          tofu apply -input=false -auto-approve
+          tofu apply -input=false -lock-timeout=10m -auto-approve
 
       - name: Print app URL
         working-directory: infra/terraform/azure
