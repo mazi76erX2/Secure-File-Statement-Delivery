@@ -306,33 +306,24 @@ async def upload_statement(
 
 
 @router.post(
-    "/generate",
+    "/{customer_id}/generate",
     response_model=AccountStatementResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def generate_fake_statement(
+    customer_id: int,
     payload: FakeStatementGenerateRequest,
     _auth: None = Depends(require_admin_api_key),
     session: AsyncSession = Depends(get_session),
 ) -> AccountStatement:
-    customers = list(
-        await session.scalars(
-            select(Customer).where(Customer.full_name == payload.customer_name)
-        )
-    )
-    if not customers:
+    customer = await session.get(Customer, customer_id)
+    if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    if len(customers) > 1:
-        raise HTTPException(
-            status_code=409,
-            detail="Multiple customers found for this name; use a unique name",
-        )
-    customer = customers[0]
 
     statement_data = generate_fake_statement_data(
         transaction_count=payload.transaction_count
     )
-    statement_data.customer_name = payload.customer_name
+    statement_data.customer_name = customer.full_name
     period_start = datetime.strptime(statement_data.from_date, "%d/%m/%Y").date()
     period_end = datetime.strptime(statement_data.to_date, "%d/%m/%Y").date()
     account_last4 = statement_data.account_number[-4:]

@@ -166,6 +166,25 @@ class _BulkLinksSession(_FakeSession):
         return None
 
 
+class _GenerateByIdSession(_FakeSession):
+    def __init__(self, customer: Customer | None) -> None:
+        super().__init__()
+        self._customer = customer
+
+    async def get(self, model, _id):
+        if model is Customer:
+            return self._customer
+        return await super().get(model, _id)
+
+    def add(self, _obj) -> None:
+        if isinstance(_obj, AccountStatement):
+            now = datetime.now(UTC)
+            _obj.id = 321
+            _obj.created_at = now
+            _obj.updated_at = now
+        return None
+
+
 @pytest.mark.anyio
 async def test_upload_statement_rejects_non_pdf_magic_header() -> None:
     fake_session = cast(AsyncSession, _FakeSession())
@@ -467,3 +486,48 @@ def test_month_range_links_route_has_distinct_path() -> None:
     }
     assert any(path.endswith("/{statement_id}/links") for path in paths)
     assert any(path.endswith("/{customer_id}/links/bulk") for path in paths)
+
+
+@pytest.mark.anyio
+async def test_generate_fake_statement_for_existing_customer_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    customer = Customer(id=7, full_name="Jane Doe", email="jane@example.com")
+    fake_session = cast(AsyncSession, _GenerateByIdSession(customer))
+
+    monkeypatch.setattr(
+        statements_module.AccountStatementPdf,
+        "render",
+        lambda *_args, **_kwargs: b"%PDF-1.4\nfake",
+    )
+    monkeypatch.setattr(
+        statements_module.storage_service,
+        "save_pdf",
+        lambda *_args, **_kwargs: "statements/7/generated.pdf",
+    )
+
+    response = await statements_module.generate_fake_statement(
+        customer_id=7,
+        payload=statements_module.FakeStatementGenerateRequest(transaction_count=5),
+        _auth=None,
+        session=fake_session,
+    )
+
+    assert response.customer_id == 7
+    assert response.file_path == "statements/7/generated.pdf"
+
+
+@pytest.mark.anyio
+async def test_generate_fake_statement_returns_404_when_customer_id_missing() -> None:
+    fake_session = cast(AsyncSession, _GenerateByIdSession(None))
+
+    with pytest.raises(HTTPException) as exc:
+        await statements_module.generate_fake_statement(
+            customer_id=999,
+            payload=statements_module.FakeStatementGenerateRequest(transaction_count=3),
+            _auth=None,
+            session=fake_session,
+        )
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Customer not found"
