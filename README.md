@@ -33,6 +33,38 @@ Secure FastAPI backend for storing account statement PDFs and issuing time-limit
 - Docker + Docker Compose
 - `uv` (for local dev checks)
 - OpenTofu/Terraform (optional for infra provisioning)
+- Azure CLI (for provisioning + login scripts)
+- `gh` CLI (optional helper for setting GitHub secrets)
+
+### Installing the prerequisites
+
+On macOS with Homebrew:
+
+```bash
+brew install --cask docker
+brew install uv
+brew install opentofu
+brew install azure-cli
+brew install gh
+```
+
+On Linux (Debian/Ubuntu):
+
+```bash
+sudo apt-get update
+sudo apt-get install docker.io docker-compose-plugin python3-uv
+curl -fsSL https://github.com/OpenTofu/OpenTofu/releases/latest/download/tofu_linux_amd64.tar.gz | tar xz -C /usr/local/bin tofu
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \ \
+  && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update
+sudo apt install gh
+```
+
+For Windows, install Docker Desktop, the Azure CLI, `gh`, and OpenTofu according to the official installers listed on their respective web sites.
+
+After installing, run `docker --version`, `tofu version`, `az version`, `gh --version`, and `uv --version` to verify the tools are available.
 
 ## Quick start (Docker development)
 
