@@ -10,20 +10,67 @@ on:
   push:
     branches: [main, master]
 
+concurrency:
+  group: deploy-azure-production-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
 
 env:
   IMAGE_NAME: secure-statement-api
+  TF_INPUT: "0"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+          AZURE_LOCATION: ${{ secrets.AZURE_LOCATION }}
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_ACR_NAME: ${{ secrets.AZURE_ACR_NAME }}
+          AZURE_KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+          AZURE_POSTGRES_SERVER_NAME: ${{ secrets.AZURE_POSTGRES_SERVER_NAME }}
+          AZURE_LOG_ANALYTICS_WORKSPACE_NAME: ${{ secrets.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
+          AZURE_CONTAINER_APP_ENV_NAME: ${{ secrets.AZURE_CONTAINER_APP_ENV_NAME }}
+          AZURE_CONTAINER_APP_NAME: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
+          STATEMENT_API_KEY: ${{ secrets.STATEMENT_API_KEY }}
+          AZURE_DB_PASSWORD: ${{ secrets.AZURE_DB_PASSWORD }}
+          AZURE_REDIS_PASSWORD: ${{ secrets.AZURE_REDIS_PASSWORD }}
+        run: |
+          set -eu
+          missing=0
+          for name in \
+            AZURE_CREDENTIALS \
+            AZURE_RESOURCE_GROUP_NAME \
+            AZURE_LOCATION \
+            AZURE_STORAGE_ACCOUNT_NAME \
+            AZURE_ACR_NAME \
+            AZURE_KEY_VAULT_NAME \
+            AZURE_POSTGRES_SERVER_NAME \
+            AZURE_LOG_ANALYTICS_WORKSPACE_NAME \
+            AZURE_CONTAINER_APP_ENV_NAME \
+            AZURE_CONTAINER_APP_NAME \
+            STATEMENT_API_KEY \
+            AZURE_DB_PASSWORD \
+            AZURE_REDIS_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required secret: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Normalize Azure credentials payload
         id: azure_creds
@@ -128,8 +175,8 @@ jobs:
           TF_VAR_pdf_password_kdf_iterations: ${{ vars.PDF_PASSWORD_KDF_ITERATIONS || 600000 }}
           TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
         run: |
-          tofu init
-          tofu apply -auto-approve \
+          tofu init -input=false
+          tofu apply -input=false -auto-approve \
             -target=azurerm_resource_group.statements \
             -target=azurerm_container_registry.main
 
@@ -183,8 +230,8 @@ jobs:
           TF_VAR_pdf_password_kdf_iterations: ${{ vars.PDF_PASSWORD_KDF_ITERATIONS || 600000 }}
           TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
         run: |
-          tofu init
-          tofu apply -auto-approve
+          tofu init -input=false
+          tofu apply -input=false -auto-approve
 
       - name: Print app URL
         working-directory: infra/terraform/azure
