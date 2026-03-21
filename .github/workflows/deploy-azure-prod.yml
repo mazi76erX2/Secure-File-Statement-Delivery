@@ -46,13 +46,14 @@ jobs:
           TF_VAR_acr_name: ${{ secrets.AZURE_ACR_NAME }}
           TF_VAR_key_vault_name: ${{ secrets.AZURE_KEY_VAULT_NAME }}
           TF_VAR_postgres_server_name: ${{ secrets.AZURE_POSTGRES_SERVER_NAME }}
-          TF_VAR_redis_name: ${{ secrets.AZURE_REDIS_NAME }}
+          TF_VAR_redis_container_app_name: ${{ secrets.AZURE_REDIS_CONTAINER_APP_NAME || 'ca-redis' }}
           TF_VAR_log_analytics_workspace_name: ${{ secrets.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
           TF_VAR_container_app_environment_name: ${{ secrets.AZURE_CONTAINER_APP_ENV_NAME }}
           TF_VAR_container_app_name: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
           TF_VAR_app_image: "${{ secrets.AZURE_ACR_NAME }}.azurecr.io/secure-statement-api:bootstrap"
           TF_VAR_statement_api_key: ${{ secrets.STATEMENT_API_KEY }}
           TF_VAR_db_password: ${{ secrets.AZURE_DB_PASSWORD }}
+          TF_VAR_redis_password: ${{ secrets.AZURE_REDIS_PASSWORD }}
           TF_VAR_pdf_password_kdf_iterations: ${{ vars.PDF_PASSWORD_KDF_ITERATIONS || 600000 }}
           TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
         run: |
@@ -100,13 +101,14 @@ jobs:
           TF_VAR_acr_name: ${{ secrets.AZURE_ACR_NAME }}
           TF_VAR_key_vault_name: ${{ secrets.AZURE_KEY_VAULT_NAME }}
           TF_VAR_postgres_server_name: ${{ secrets.AZURE_POSTGRES_SERVER_NAME }}
-          TF_VAR_redis_name: ${{ secrets.AZURE_REDIS_NAME }}
+          TF_VAR_redis_container_app_name: ${{ secrets.AZURE_REDIS_CONTAINER_APP_NAME || 'ca-redis' }}
           TF_VAR_log_analytics_workspace_name: ${{ secrets.AZURE_LOG_ANALYTICS_WORKSPACE_NAME }}
           TF_VAR_container_app_environment_name: ${{ secrets.AZURE_CONTAINER_APP_ENV_NAME }}
           TF_VAR_container_app_name: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
           TF_VAR_app_image: ${{ env.IMAGE_URI }}
           TF_VAR_statement_api_key: ${{ secrets.STATEMENT_API_KEY }}
           TF_VAR_db_password: ${{ secrets.AZURE_DB_PASSWORD }}
+          TF_VAR_redis_password: ${{ secrets.AZURE_REDIS_PASSWORD }}
           TF_VAR_pdf_password_kdf_iterations: ${{ vars.PDF_PASSWORD_KDF_ITERATIONS || 600000 }}
           TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
         run: |

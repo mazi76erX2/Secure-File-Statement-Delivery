@@ -102,18 +102,6 @@ resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure_service
   end_ip_address   = "0.0.0.0"
 }
 
-resource "azurerm_redis_cache" "main" {
-  name                 = var.redis_name
-  resource_group_name  = azurerm_resource_group.statements.name
-  location             = azurerm_resource_group.statements.location
-  capacity             = 0
-  family               = "C"
-  sku_name             = "Basic"
-  minimum_tls_version  = "1.2"
-  non_ssl_port_enabled = false
-  tags                 = var.tags
-}
-
 resource "azurerm_log_analytics_workspace" "main" {
   name                = var.log_analytics_workspace_name
   location            = azurerm_resource_group.statements.location
@@ -129,6 +117,39 @@ resource "azurerm_container_app_environment" "main" {
   resource_group_name        = azurerm_resource_group.statements.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
   tags                       = var.tags
+}
+
+resource "azurerm_container_app" "redis" {
+  name                         = var.redis_container_app_name
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.statements.name
+  revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
+  tags                         = var.tags
+
+  ingress {
+    external_enabled = false
+    target_port      = 6379
+    transport        = "tcp"
+
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 1
+
+    container {
+      name   = "redis"
+      image  = "redis:8.6.1-alpine"
+      cpu    = 0.25
+      memory = "0.5Gi"
+      args   = ["redis-server", "--requirepass", var.redis_password]
+    }
+  }
 }
 
 resource "azurerm_container_app" "api" {
@@ -155,7 +176,7 @@ resource "azurerm_container_app" "api" {
 
   secret {
     name  = "redis-password"
-    value = azurerm_redis_cache.main.primary_access_key
+    value = var.redis_password
   }
 
   secret {
@@ -238,12 +259,12 @@ resource "azurerm_container_app" "api" {
 
       env {
         name  = "CACHE_HOST"
-        value = azurerm_redis_cache.main.hostname
+        value = var.redis_container_app_name
       }
 
       env {
         name  = "CACHE_PORT"
-        value = tostring(azurerm_redis_cache.main.ssl_port)
+        value = "6379"
       }
 
       env {
@@ -253,12 +274,12 @@ resource "azurerm_container_app" "api" {
 
       env {
         name  = "CACHE_USE_SSL"
-        value = "true"
+        value = "false"
       }
 
       env {
         name  = "CACHE_SSL_CERT_REQS"
-        value = "required"
+        value = "none"
       }
 
       env {

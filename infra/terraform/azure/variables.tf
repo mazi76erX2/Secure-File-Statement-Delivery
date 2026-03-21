@@ -35,9 +35,10 @@ variable "postgres_server_name" {
   description = "Globally unique PostgreSQL Flexible Server name"
 }
 
-variable "redis_name" {
+variable "redis_container_app_name" {
   type        = string
-  description = "Globally unique Azure Cache for Redis name"
+  description = "Container App name for internal Redis service"
+  default     = "ca-redis"
 }
 
 variable "log_analytics_workspace_name" {
@@ -100,6 +101,12 @@ variable "statement_api_key" {
 variable "db_password" {
   type        = string
   description = "PostgreSQL admin password"
+  sensitive   = true
+}
+
+variable "redis_password" {
+  type        = string
+  description = "Password for internal Redis service"
   sensitive   = true
 }
 

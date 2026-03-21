@@ -33,14 +33,9 @@ output "postgres_fqdn" {
   description = "PostgreSQL Flexible Server hostname"
 }
 
-output "redis_hostname" {
-  value       = azurerm_redis_cache.main.hostname
-  description = "Azure Redis hostname"
-}
-
-output "redis_ssl_port" {
-  value       = azurerm_redis_cache.main.ssl_port
-  description = "Azure Redis SSL port"
+output "redis_container_app_name" {
+  value       = azurerm_container_app.redis.name
+  description = "Internal Redis Container App name"
 }
 
 output "key_vault_name" {

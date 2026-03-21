@@ -137,7 +137,8 @@ Use this split model:
 
 - Local development: `docker-compose.yml` (unchanged)
 - Azure production app runtime: Azure Container Apps
-- Azure managed dependencies: PostgreSQL Flexible Server, Azure Cache for Redis, Azure Blob Storage
+- Azure managed dependencies: PostgreSQL Flexible Server, Azure Blob Storage
+- Internal cache in same Container Apps environment: Redis container app
 - Image registry: Azure Container Registry (ACR)
 - Secrets: Azure Key Vault + GitHub Actions secrets
 
@@ -151,7 +152,8 @@ Use this split model:
 - `AZURE_ACR_NAME` (globally unique, alphanumeric)
 - `AZURE_KEY_VAULT_NAME` (globally unique)
 - `AZURE_POSTGRES_SERVER_NAME` (globally unique)
-- `AZURE_REDIS_NAME` (globally unique)
+- `AZURE_REDIS_CONTAINER_APP_NAME` (optional, default `ca-redis`)
+- `AZURE_REDIS_PASSWORD`
 - `AZURE_LOG_ANALYTICS_WORKSPACE_NAME`
 - `AZURE_CONTAINER_APP_ENV_NAME`
 - `AZURE_CONTAINER_APP_NAME`
@@ -171,11 +173,11 @@ Optional GitHub Actions variables:
 - ACR
 - Key Vault + secrets (deployment-time values)
 - PostgreSQL Flexible Server + database + Azure firewall rule
-- Azure Cache for Redis (SSL-only)
+- Internal Redis Container App (free-tier friendly)
 - Blob Storage account + private container
 - Log Analytics Workspace
 - Container Apps Environment
-- Container App for the API
+- Container Apps for the API and Redis
 
 #### 3) Deploy via GitHub Actions
 
@@ -651,9 +653,10 @@ docker compose -f docker-compose.lgtm.yml up -d
 If running in Azure with managed services:
 
 - Ensure `DATABASE_SSL_MODE=require`
-- Ensure `CACHE_USE_SSL=true`
-- Ensure `CACHE_PORT=6380` and `CACHE_PASSWORD` is set from Azure Redis access key
-- Keep `CACHE_SSL_CERT_REQS=required` unless troubleshooting certificates in non-production environments
+- Ensure `CACHE_USE_SSL=false` for internal Container Apps Redis traffic
+- Ensure `CACHE_HOST` matches the Redis container app name (default `ca-redis`)
+- Ensure `CACHE_PORT=6379` and `CACHE_PASSWORD` is set from `AZURE_REDIS_PASSWORD`
+- Keep `CACHE_SSL_CERT_REQS=none` for the internal Redis container app setup
 
 ### Database Migration Errors
 
