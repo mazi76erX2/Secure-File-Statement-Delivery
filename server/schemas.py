@@ -55,6 +55,11 @@ class AccountStatementResponse(AccountStatementBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FakeStatementGenerateRequest(BaseModel):
+    customer_name: str = Field(min_length=1, max_length=255)
+    transaction_count: int = Field(default=100, ge=1, le=500)
+
+
 class StatementDownloadLinkCreate(BaseModel):
     expires_in_seconds: int = Field(default=900, ge=60, le=86400)
     max_downloads: int = Field(default=1, ge=1, le=20)

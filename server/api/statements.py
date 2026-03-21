@@ -30,6 +30,7 @@ from schemas import (
     AccountStatementResponse,
     CustomerCreate,
     CustomerResponse,
+    FakeStatementGenerateRequest,
     StatementDownloadLinkCreate,
     StatementDownloadLinkIssued,
     StatementDownloadLinkResponse,
@@ -49,6 +50,8 @@ from services.document_storage import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
+from utils.fake_statement_data import generate_fake_statement_data
+from utils.statement_pdf import AccountStatementPdf
 
 router = APIRouter(prefix="/statements", tags=["statements"])
 storage_service = DocumentStorageService(settings)
@@ -295,6 +298,74 @@ async def upload_statement(
         content_type=file.content_type,
         file_size_bytes=len(content),
         checksum_sha256=hashlib.sha256(content).hexdigest(),
+    )
+    session.add(statement)
+    await session.commit()
+    await session.refresh(statement)
+    return statement
+
+
+@router.post(
+    "/generate",
+    response_model=AccountStatementResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def generate_fake_statement(
+    payload: FakeStatementGenerateRequest,
+    _auth: None = Depends(require_admin_api_key),
+    session: AsyncSession = Depends(get_session),
+) -> AccountStatement:
+    customers = list(
+        await session.scalars(
+            select(Customer).where(Customer.full_name == payload.customer_name)
+        )
+    )
+    if not customers:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    if len(customers) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Multiple customers found for this name; use a unique name",
+        )
+    customer = customers[0]
+
+    statement_data = generate_fake_statement_data(
+        transaction_count=payload.transaction_count
+    )
+    statement_data.customer_name = payload.customer_name
+    period_start = datetime.strptime(statement_data.from_date, "%d/%m/%Y").date()
+    period_end = datetime.strptime(statement_data.to_date, "%d/%m/%Y").date()
+    account_last4 = statement_data.account_number[-4:]
+
+    pdf_generator = AccountStatementPdf()
+    generated_pdf = await run_in_threadpool(pdf_generator.render, statement_data)
+    generated_file_name = f"generated-{customer.id}-{period_end.isoformat()}.pdf"
+
+    try:
+        stored_object_key = await run_in_threadpool(
+            storage_service.save_pdf, generated_pdf, customer.id, generated_file_name
+        )
+    except StorageConfigurationError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Statement storage is not configured correctly",
+        ) from exc
+    except StorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Statement storage is temporarily unavailable",
+        ) from exc
+
+    statement = AccountStatement(
+        customer_id=customer.id,
+        account_number_last4=account_last4,
+        statement_period_start=period_start,
+        statement_period_end=period_end,
+        file_name=generated_file_name,
+        file_path=stored_object_key,
+        content_type="application/pdf",
+        file_size_bytes=len(generated_pdf),
+        checksum_sha256=hashlib.sha256(generated_pdf).hexdigest(),
     )
     session.add(statement)
     await session.commit()

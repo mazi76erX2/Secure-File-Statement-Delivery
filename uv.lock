@@ -1149,6 +1149,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "azure-storage-blob" },
     { name = "boto3" },
+    { name = "faker" },
     { name = "fastapi" },
     { name = "fpdf2" },
     { name = "pikepdf" },
@@ -1164,7 +1165,6 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "anyio", extra = ["trio"] },
-    { name = "faker" },
     { name = "fastapi-debug-toolbar" },
     { name = "mypy" },
     { name = "pre-commit" },
@@ -1181,7 +1181,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "azure-storage-blob", specifier = ">=12.26.0" },
     { name = "boto3", specifier = ">=1.38.0" },
-    { name = "faker", marker = "extra == 'dev'", specifier = ">=37.0.0" },
+    { name = "faker", specifier = ">=37.0.0" },
     { name = "fastapi", specifier = ">=0.135.1" },
     { name = "fastapi-debug-toolbar", marker = "extra == 'dev'", specifier = ">=0.6.3" },
     { name = "fpdf2", specifier = ">=2.8.0" },
