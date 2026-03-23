@@ -22,6 +22,10 @@ env:
   IMAGE_NAME: secure-statement-api
   TF_INPUT: "0"
   ARM_USE_AZUREAD: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TF_STATE_RESOURCE_GROUP: rg-tfstate
+  TF_STATE_STORAGE_ACCOUNT: tfstatemazi
+  TF_STATE_CONTAINER: tfstate
 
 jobs:
   deploy:
@@ -155,6 +159,27 @@ jobs:
           echo "ARM_CLIENT_SECRET=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['clientSecret'])")" >> "$GITHUB_ENV"
           echo "ARM_TENANT_ID=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['tenantId'])")" >> "$GITHUB_ENV"
           echo "ARM_SUBSCRIPTION_ID=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['subscriptionId'])")" >> "$GITHUB_ENV"
+
+      - name: Verify remote state Blob access
+        run: |
+          set -euo pipefail
+
+          if az storage blob list \
+            --auth-mode login \
+            --account-name "$TF_STATE_STORAGE_ACCOUNT" \
+            --container-name "$TF_STATE_CONTAINER" \
+            --num-results 1 \
+            --only-show-errors \
+            >/dev/null; then
+            echo "Verified Azure AD data-plane access to remote state container."
+            exit 0
+          fi
+
+          echo "::error::Missing Azure Blob data-plane permissions for Terraform/OpenTofu remote state."
+          echo "::error::Grant role 'Storage Blob Data Contributor' on the state storage account or container scope to the deployment service principal."
+          echo "::error::Example (subscription owner):"
+          echo "::error::az role assignment create --assignee \"$ARM_CLIENT_ID\" --role \"Storage Blob Data Contributor\" --scope \"/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_STATE_RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/$TF_STATE_STORAGE_ACCOUNT\""
+          exit 1
 
       - name: Ensure Azure resource providers are available
         run: |

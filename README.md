@@ -299,6 +299,31 @@ tofu init -reconfigure -input=false
 
 If you authenticate with a service principal in CI/CD, assign the same role to that service principal object id.
 
+### OpenTofu Azure backend `403 AuthorizationPermissionMismatch` on `ListBlobs`
+
+**Problem:**
+
+`tofu init -reconfigure -input=false -backend-config="use_azuread_auth=true"` fails with:
+
+`containers.Client#ListBlobs ... Code="AuthorizationPermissionMismatch"`
+
+**Why:**
+
+The CI identity can authenticate to Azure, but it is missing Blob data-plane permissions on the remote state container/account.
+
+**Fix:**
+
+Assign `Storage Blob Data Contributor` to the GitHub Actions service principal (the app id used by `AZURE_CREDENTIALS`) on the state storage account scope:
+
+```bash
+az role assignment create \
+  --assignee "<github-actions-client-id>" \
+  --role "Storage Blob Data Contributor" \
+  --scope "/subscriptions/563e3a21-bb51-4f11-a4ed-b3124b09f5e8/resourceGroups/rg-tfstate/providers/Microsoft.Storage/storageAccounts/tfstatemazi"
+```
+
+Then wait a few minutes for RBAC propagation and re-run the workflow.
+
 ### PDF Download Fails
 
 **Problem:** 401 or 410 errors when downloading
