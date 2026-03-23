@@ -155,14 +155,28 @@ jobs:
           echo "ARM_TENANT_ID=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['tenantId'])")" >> "$GITHUB_ENV"
           echo "ARM_SUBSCRIPTION_ID=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['subscriptionId'])")" >> "$GITHUB_ENV"
 
-      - name: Register Azure resource providers
+      - name: Ensure Azure resource providers are available
         run: |
           set -euo pipefail
-          az provider register --namespace Microsoft.App --wait
-          az provider register --namespace Microsoft.OperationalInsights --wait
-          az provider register --namespace Microsoft.Storage --wait
-          az provider register --namespace Microsoft.KeyVault --wait
-          az provider register --namespace Microsoft.DBforPostgreSQL --wait
+          for ns in \
+            Microsoft.App \
+            Microsoft.OperationalInsights \
+            Microsoft.Storage \
+            Microsoft.KeyVault \
+            Microsoft.DBforPostgreSQL; do
+            state="$(az provider show --namespace "$ns" --query registrationState -o tsv 2>/dev/null || echo unknown)"
+            if [ "$state" = "Registered" ]; then
+              echo "Provider $ns already registered"
+              continue
+            fi
+
+            echo "Provider $ns is '$state' - attempting registration"
+            if az provider register --namespace "$ns" --wait; then
+              echo "Provider $ns registered"
+            else
+              echo "::warning::Could not register provider $ns with current principal. If deployment later fails for missing provider, ask a subscription owner to run: az provider register --namespace $ns --wait"
+            fi
+          done
 
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v1
