@@ -564,50 +564,116 @@ tofu output bucket_name
 
 These outputs allow you to wire up the deployed API, database, cache, and storage bucket. If you prefer Terraform instead of OpenTofu, the same commands apply; replace `tofu` with `terraform`.
 
-Add deployment settings to GitHub (secrets/variables)
+GitHub Settings for `.github/workflows/deploy-azure-prod.yml`
 
-After provisioning you should add the required deployment values to your repository's GitHub Settings → Secrets and variables → Actions. Examples below show how to obtain common values and set them with the `gh` CLI.
+The workflow runs with `environment: production`, so set these as **production environment secrets** (not only repository secrets):
 
-- Create an Azure service principal JSON (for `AZURE_CREDENTIALS`):
+- `AZURE_CREDENTIALS`
+- `AZURE_RESOURCE_GROUP_NAME`
+- `AZURE_LOCATION`
+- `AZURE_STORAGE_ACCOUNT_NAME`
+- `AZURE_STORAGE_CONTAINER_NAME`
+- `AZURE_ACR_NAME`
+- `AZURE_KEY_VAULT_NAME`
+- `AZURE_POSTGRES_SERVER_NAME`
+- `AZURE_REDIS_CONTAINER_APP_NAME` (optional, defaults to `ca-redis` in workflow)
+- `AZURE_REDIS_PASSWORD`
+- `AZURE_LOG_ANALYTICS_WORKSPACE_NAME`
+- `AZURE_CONTAINER_APP_ENV_NAME`
+- `AZURE_CONTAINER_APP_NAME`
+- `STATEMENT_API_KEY`
+- `AZURE_DB_PASSWORD`
+
+Optional secret:
+
+- `AZURE_SUBSCRIPTION_ID` (only needed if `subscriptionId` is missing from `AZURE_CREDENTIALS` JSON)
+
+Optional production environment variables:
+
+- `PDF_PASSWORD_KDF_ITERATIONS` (default `600000`)
+- `LOG_LEVEL` (default `INFO`)
+
+### Commands to pull values from existing Azure resources
 
 ```bash
-# creates a JSON suitable for GitHub Actions `AZURE_CREDENTIALS`
-az ad sp create-for-rbac --name "secure-stmt-deployer" --role Contributor --sdk-auth
+# Set your resource group first
+RG="rg-stmt-6a7380"
 
-# save to GitHub secret (read from file or pipe)
-az ad sp create-for-rbac --name "secure-stmt-deployer" --role Contributor --sdk-auth \
-  | gh secret set AZURE_CREDENTIALS --repo mazi76erX2/Secure-File-Statement-Delivery
+LOCATION=$(az group show -n "$RG" --query location -o tsv)
+STORAGE_ACCOUNT=$(az storage account list -g "$RG" --query "[0].name" -o tsv)
+STORAGE_CONTAINER=$(az storage container list --account-name "$STORAGE_ACCOUNT" --auth-mode login --query "[0].name" -o tsv)
+ACR_NAME=$(az acr list -g "$RG" --query "[0].name" -o tsv)
+KV_NAME=$(az keyvault list -g "$RG" --query "[0].name" -o tsv)
+POSTGRES_SERVER=$(az postgres flexible-server list -g "$RG" --query "[0].name" -o tsv)
+LAW_NAME=$(az monitor log-analytics workspace list -g "$RG" --query "[0].name" -o tsv)
+CAE_NAME=$(az containerapp env list -g "$RG" --query "[0].name" -o tsv)
+API_APP_NAME=$(az containerapp list -g "$RG" --query "[?properties.configuration.ingress.external==\`true\`].name | [0]" -o tsv)
+REDIS_APP_NAME=$(az containerapp list -g "$RG" --query "[?properties.configuration.ingress.external==\`false\`].name | [0]" -o tsv)
 ```
 
-- Use OpenTofu/Terraform outputs for values created by your infra modules and set them as secrets:
+### One-liner to set non-sensitive production environment secrets
 
 ```bash
-cd infra/terraform/azure
-tofu output -raw azure_acr_name | gh secret set AZURE_ACR_NAME --repo mazi76erX2/Secure-File-Statement-Delivery
-tofu output -raw key_vault_name | gh secret set AZURE_KEY_VAULT_NAME --repo mazi76erX2/Secure-File-Statement-Delivery
-tofu output -raw postgres_endpoint | gh secret set AZURE_POSTGRES_SERVER_NAME --repo mazi76erX2/Secure-File-Statement-Delivery
-tofu output -raw redis_password | gh secret set AZURE_REDIS_PASSWORD --repo mazi76erX2/Secure-File-Statement-Delivery
+REPO="mazi76erX2/Secure-File-Statement-Delivery" ENV_NAME="production" RG="rg-stmt-6a7380" bash -c 'set -euo pipefail; LOCATION=$(az group show -n "$RG" --query location -o tsv); STORAGE_ACCOUNT=$(az storage account list -g "$RG" --query "[0].name" -o tsv); STORAGE_CONTAINER=$(az storage container list --account-name "$STORAGE_ACCOUNT" --auth-mode login --query "[0].name" -o tsv); ACR_NAME=$(az acr list -g "$RG" --query "[0].name" -o tsv); KV_NAME=$(az keyvault list -g "$RG" --query "[0].name" -o tsv); POSTGRES_SERVER=$(az postgres flexible-server list -g "$RG" --query "[0].name" -o tsv); LAW_NAME=$(az monitor log-analytics workspace list -g "$RG" --query "[0].name" -o tsv); CAE_NAME=$(az containerapp env list -g "$RG" --query "[0].name" -o tsv); API_APP_NAME=$(az containerapp list -g "$RG" --query "[?properties.configuration.ingress.external==\`true\`].name | [0]" -o tsv); REDIS_APP_NAME=$(az containerapp list -g "$RG" --query "[?properties.configuration.ingress.external==\`false\`].name | [0]" -o tsv); gh secret set AZURE_RESOURCE_GROUP_NAME --repo "$REPO" --env "$ENV_NAME" --body "$RG"; gh secret set AZURE_LOCATION --repo "$REPO" --env "$ENV_NAME" --body "$LOCATION"; gh secret set AZURE_STORAGE_ACCOUNT_NAME --repo "$REPO" --env "$ENV_NAME" --body "$STORAGE_ACCOUNT"; gh secret set AZURE_STORAGE_CONTAINER_NAME --repo "$REPO" --env "$ENV_NAME" --body "$STORAGE_CONTAINER"; gh secret set AZURE_ACR_NAME --repo "$REPO" --env "$ENV_NAME" --body "$ACR_NAME"; gh secret set AZURE_KEY_VAULT_NAME --repo "$REPO" --env "$ENV_NAME" --body "$KV_NAME"; gh secret set AZURE_POSTGRES_SERVER_NAME --repo "$REPO" --env "$ENV_NAME" --body "$POSTGRES_SERVER"; gh secret set AZURE_LOG_ANALYTICS_WORKSPACE_NAME --repo "$REPO" --env "$ENV_NAME" --body "$LAW_NAME"; gh secret set AZURE_CONTAINER_APP_ENV_NAME --repo "$REPO" --env "$ENV_NAME" --body "$CAE_NAME"; gh secret set AZURE_CONTAINER_APP_NAME --repo "$REPO" --env "$ENV_NAME" --body "$API_APP_NAME"; gh secret set AZURE_REDIS_CONTAINER_APP_NAME --repo "$REPO" --env "$ENV_NAME" --body "$REDIS_APP_NAME"'
 ```
 
-- Example: set the runtime API key and DB password:
+### Commands to set GitHub secrets
 
 ```bash
-echo -n "super-secret-api-key" | gh secret set STATEMENT_API_KEY --repo mazi76erX2/Secure-File-Statement-Delivery
-echo -n "postgres-db-password" | gh secret set AZURE_DB_PASSWORD --repo mazi76erX2/Secure-File-Statement-Delivery
+REPO="mazi76erX2/Secure-File-Statement-Delivery"
+ENV_NAME="production"
+
+gh secret set AZURE_RESOURCE_GROUP_NAME --repo "$REPO" --env "$ENV_NAME" --body "$RG"
+gh secret set AZURE_LOCATION --repo "$REPO" --env "$ENV_NAME" --body "$LOCATION"
+gh secret set AZURE_STORAGE_ACCOUNT_NAME --repo "$REPO" --env "$ENV_NAME" --body "$STORAGE_ACCOUNT"
+gh secret set AZURE_STORAGE_CONTAINER_NAME --repo "$REPO" --env "$ENV_NAME" --body "$STORAGE_CONTAINER"
+gh secret set AZURE_ACR_NAME --repo "$REPO" --env "$ENV_NAME" --body "$ACR_NAME"
+gh secret set AZURE_KEY_VAULT_NAME --repo "$REPO" --env "$ENV_NAME" --body "$KV_NAME"
+gh secret set AZURE_POSTGRES_SERVER_NAME --repo "$REPO" --env "$ENV_NAME" --body "$POSTGRES_SERVER"
+gh secret set AZURE_LOG_ANALYTICS_WORKSPACE_NAME --repo "$REPO" --env "$ENV_NAME" --body "$LAW_NAME"
+gh secret set AZURE_CONTAINER_APP_ENV_NAME --repo "$REPO" --env "$ENV_NAME" --body "$CAE_NAME"
+gh secret set AZURE_CONTAINER_APP_NAME --repo "$REPO" --env "$ENV_NAME" --body "$API_APP_NAME"
+gh secret set AZURE_REDIS_CONTAINER_APP_NAME --repo "$REPO" --env "$ENV_NAME" --body "$REDIS_APP_NAME"
 ```
 
-- AWS outputs (if using the AWS module):
+### Create and set `AZURE_CREDENTIALS`
 
 ```bash
-cd infra/terraform/aws
-tofu output -raw ecr_repository_url | gh secret set ECR_REPOSITORY_URL --repo mazi76erX2/Secure-File-Statement-Delivery
-tofu output -raw ecs_service_url | gh secret set ECS_SERVICE_URL --repo mazi76erX2/Secure-File-Statement-Delivery
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+az ad sp create-for-rbac \
+  --name "sp-secure-file-statement-delivery-gha" \
+  --role Contributor \
+  --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG" \
+  --sdk-auth \
+| gh secret set AZURE_CREDENTIALS --repo "$REPO" --env "$ENV_NAME"
+```
+
+### Pull sensitive values from Key Vault into GitHub secrets
+
+```bash
+az keyvault secret show --vault-name "$KV_NAME" --name statement-api-key --query value -o tsv \
+| gh secret set STATEMENT_API_KEY --repo "$REPO" --env "$ENV_NAME"
+
+az keyvault secret show --vault-name "$KV_NAME" --name db-password --query value -o tsv \
+| gh secret set AZURE_DB_PASSWORD --repo "$REPO" --env "$ENV_NAME"
+
+# if you have a redis-password secret in Key Vault:
+az keyvault secret show --vault-name "$KV_NAME" --name redis-password --query value -o tsv \
+| gh secret set AZURE_REDIS_PASSWORD --repo "$REPO" --env "$ENV_NAME"
+```
+
+### Optional GitHub variables
+
+```bash
+gh variable set PDF_PASSWORD_KDF_ITERATIONS --repo "$REPO" --env "$ENV_NAME" --body "600000"
+gh variable set LOG_LEVEL --repo "$REPO" --env "$ENV_NAME" --body "INFO"
 ```
 
 Notes:
-- Use `gh secret set NAME --repo owner/repo` to write secrets programmatically.
-- For non-secret values you can use `gh variable set NAME -b "value" --repo owner/repo`.
-- Do not commit secret values into the repository. Keep secrets in GitHub or a vault (Key Vault, AWS Secrets Manager).
+
+- Run `gh auth login` before using `gh secret set` / `gh variable set`.
+- Do not commit secret values into the repository.
 
 
 ### 2. Build and Push Docker Image
