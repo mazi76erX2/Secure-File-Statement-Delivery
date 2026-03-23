@@ -796,6 +796,79 @@ Error: error putting S3 Bucket Server Side Encryption: NotImplemented
 enable_bucket_encryption = false  # default
 ```
 
+### OpenTofu Azure backend `403 AuthorizationFailed` on `listKeys`
+
+**Problem:**
+
+`tofu init` fails with:
+
+`Microsoft.Storage/storageAccounts/listKeys/action`
+
+**Why:**
+
+Your identity does not have permissions to use storage account keys for the remote state backend.
+
+**Fix (recommended, least privilege):**
+
+This repository now uses Entra ID auth for the Azure backend (`use_azuread_auth = true`).
+Grant your identity a Blob data-plane role on the state storage account:
+
+```bash
+# set values
+SUBSCRIPTION_ID="563e3a21-bb51-4f11-a4ed-b3124b09f5e8"
+RESOURCE_GROUP="rg-tfstate"
+STORAGE_ACCOUNT="tfstatemazi"
+
+# get your current principal object id
+ASSIGNEE_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv)
+
+# scope to the storage account
+SCOPE=$(az storage account show \
+  --name "$STORAGE_ACCOUNT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query id -o tsv)
+
+# allow backend state read/write via Azure AD (no account keys required)
+az role assignment create \
+  --assignee-object-id "$ASSIGNEE_OBJECT_ID" \
+  --assignee-principal-type User \
+  --role "Storage Blob Data Contributor" \
+  --scope "$SCOPE"
+
+# refresh token and retry
+az account set --subscription "$SUBSCRIPTION_ID"
+az login
+cd infra/terraform/azure
+tofu init -reconfigure -input=false
+```
+
+If you authenticate with a service principal in CI/CD, assign the same role to that service principal object id.
+
+### OpenTofu Azure backend `403 AuthorizationPermissionMismatch` on `ListBlobs`
+
+**Problem:**
+
+`tofu init -reconfigure -input=false -backend-config="use_azuread_auth=true"` fails with:
+
+`containers.Client#ListBlobs ... Code="AuthorizationPermissionMismatch"`
+
+**Why:**
+
+The CI identity can authenticate to Azure, but it is missing Blob data-plane permissions on the remote state container/account.
+
+**Fix:**
+
+Assign `Storage Blob Data Contributor` to the GitHub Actions service principal (the app id used by `AZURE_CREDENTIALS`) on the state storage account scope:
+
+```bash
+az role assignment create \
+  --assignee "<github-actions-client-id>" \
+  --role "Storage Blob Data Contributor" \
+  --scope "/subscriptions/563e3a21-bb51-4f11-a4ed-b3124b09f5e8/resourceGroups/rg-tfstate/providers/Microsoft.Storage/storageAccounts/tfstatemazi"
+```
+
+Then wait a few minutes for RBAC propagation and re-run the workflow.
+
 ### PDF Download Fails
 
 **Problem:** 401 or 410 errors when downloading
