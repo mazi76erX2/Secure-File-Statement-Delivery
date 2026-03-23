@@ -21,6 +21,7 @@ permissions:
 env:
   IMAGE_NAME: secure-statement-api
   TF_INPUT: "0"
+  ARM_USE_AZUREAD: "true"
 
 jobs:
   deploy:
@@ -205,7 +206,7 @@ jobs:
           TF_VAR_pdf_password_kdf_iterations: ${{ vars.PDF_PASSWORD_KDF_ITERATIONS || 600000 }}
           TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
         run: |
-          tofu init -input=false
+          tofu init -reconfigure -input=false -backend-config="use_azuread_auth=true"
 
           tofu apply -input=false -lock-timeout=10m -auto-approve \
             -target=azurerm_resource_group.statements \
@@ -261,7 +262,7 @@ jobs:
           TF_VAR_pdf_password_kdf_iterations: ${{ vars.PDF_PASSWORD_KDF_ITERATIONS || 600000 }}
           TF_VAR_log_level: ${{ vars.LOG_LEVEL || 'INFO' }}
         run: |
-          tofu init -input=false
+          tofu init -reconfigure -input=false -backend-config="use_azuread_auth=true"
 
           tofu apply -input=false -lock-timeout=10m -auto-approve
 

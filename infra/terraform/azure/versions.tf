@@ -6,6 +6,7 @@ terraform {
     storage_account_name = "tfstatemazi"
     container_name       = "tfstate"
     key                  = "prod.terraform.tfstate"
+    use_azuread_auth     = true
   }
 
   required_providers {
