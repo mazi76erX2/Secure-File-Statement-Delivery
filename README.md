@@ -519,51 +519,76 @@ uv run pre-commit run --all-files
 
 - AWS CLI configured with credentials
 - Terraform/OpenTofu installed
-- ECR repository created
+- Values ready for the sensitive inputs (`statement_api_key`, `db_password`, `redis_password`) that the AWS module stores in Secrets Manager
 
-### 1. Build and Push Docker Image
+### 1. Provision Infrastructure
 
-```bash
-# Authenticate Docker to ECR
-aws ecr get-login-password --region af-south-1 | \
-  docker login --username AWS --password-stdin <account-id>.dkr.ecr.af-south-1.amazonaws.com
-
-# Build production image
-docker build -f docker/Dockerfile.prod -t secure-statement-api:prod .
-
-# Tag and push
-docker tag secure-statement-api:prod <account-id>.dkr.ecr.af-south-1.amazonaws.com/secure-statement-api:latest
-docker push <account-id>.dkr.ecr.af-south-1.amazonaws.com/secure-statement-api:latest
-```
-
-### 2. Provision Infrastructure
+The AWS OpenTofu/Terraform module now creates the full stack for production: S3 for statements, ECR, an Application Load Balancer, an ECS/Fargate service, Secrets Manager entries, RDS PostgreSQL, and ElastiCache Redis. Provide the API key and the two passwords as sensitive variables so the ECS task can consume them securely.
 
 ```bash
 cd infra/terraform/aws
 
-# Initialize Terraform
-terraform init
+# Initialize the working directory
+tofu init
 
-# Review plan
-terraform plan \
+# Review plan (or swap `tofu` with `terraform` if preferred)
+tofu plan \
   -var="environment=prod" \
   -var="aws_region=af-south-1" \
-  -var="bucket_name=my-statements-bucket"
+  -var="bucket_name=my-statements-bucket" \
+  -var="statement_api_key=<value>" \
+  -var="db_password=<value>" \
+  -var="redis_password=<value>" \
+  -var="app_image_tag=latest"
 
-# Apply
-terraform apply \
+# Apply the configuration
+tofu apply \
   -var="environment=prod" \
   -var="aws_region=af-south-1" \
-  -var="bucket_name=my-statements-bucket"
+  -var="bucket_name=my-statements-bucket" \
+  -var="statement_api_key=<value>" \
+  -var="db_password=<value>" \
+  -var="redis_password=<value>" \
+  -var="app_image_tag=latest"
 ```
 
-### 3. Deploy to EKS (GitOps)
+After the apply completes, capture the automatically created values with:
 
-For EKS deployment with ArgoCD:
+```bash
+tofu output ecs_service_url
+tofu output ecr_repository_url
+tofu output postgres_endpoint
+tofu output redis_endpoint
+tofu output bucket_name
+```
+
+These outputs allow you to wire up the deployed API, database, cache, and storage bucket. If you prefer Terraform instead of OpenTofu, the same commands apply; replace `tofu` with `terraform`.
+
+### 2. Build and Push Docker Image
+
+Once the stack (and therefore the ECR repository) exists, build the production image and tag it with the rendered repository URI. The `app_image_tag` variable you supply to Terraform controls which tag ECS pulls.
+
+```bash
+cd Secure-File-Statement-Delivery
+export APP_IMAGE_TAG=latest
+ECR_URL=$(cd infra/terraform/aws && tofu output -raw ecr_repository_url)
+aws ecr get-login-password --region af-south-1 | \
+  docker login --username AWS --password-stdin ${ECR_URL%/*}
+docker build -f docker/Dockerfile.prod -t secure-statement-api:$APP_IMAGE_TAG .
+docker tag secure-statement-api:$APP_IMAGE_TAG ${ECR_URL}:$APP_IMAGE_TAG
+docker push ${ECR_URL}:$APP_IMAGE_TAG
+```
+
+After pushing, ECS will refresh the service to use the new image tag (or rerun `tofu apply -var="app_image_tag=$APP_IMAGE_TAG"` to force a rollout).
+
+### 3. Optional: Deploy to EKS (GitOps)
+
+If you need an EKS-based setup instead of ECS, the repo still contains `infra/k8s/` manifests.
 
 1. Create Kubernetes manifests in `infra/k8s/`
-2. Configure ArgoCD Application pointing to the repo
+2. Configure an ArgoCD Application pointing to the repo
 3. Push changes to trigger deployment
+
 
 ### AWS Architecture
 
@@ -571,7 +596,7 @@ For EKS deployment with ArgoCD:
 ┌─────────────────────────────────────────────────────────────────┐
 │                           AWS Cloud                             │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
-│  │     ALB      │───▶│     EKS      │───▶│   RDS Postgres   │  │
+│  │     ALB      │───▶│     ECS      │───▶│   RDS Postgres   │  │
 │  │ (Ingress)    │    │  (FastAPI)   │    │                  │  │
 │  └──────────────┘    └──────────────┘    └──────────────────┘  │
 │                             │                                   │
