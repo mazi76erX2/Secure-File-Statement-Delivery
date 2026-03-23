@@ -324,6 +324,31 @@ az role assignment create \
 
 Then wait a few minutes for RBAC propagation and re-run the workflow.
 
+### OpenTofu `403 Forbidden` reading Key Vault secrets
+
+**Problem:**
+
+OpenTofu fails while refreshing `azurerm_key_vault_secret` resources with:
+
+`does not have secrets get permission on key vault`
+
+**Why:**
+
+The CI service principal can access Azure resources, but it does not have Key Vault secret data-plane permissions.
+
+**Fix:**
+
+Grant secret permissions to the deploy principal on the Key Vault:
+
+```bash
+az keyvault set-policy \
+  --name "<key-vault-name>" \
+  --spn "<github-actions-client-id>" \
+  --secret-permissions get list set delete
+```
+
+Then re-run the workflow.
+
 ### PDF Download Fails
 
 **Problem:** 401 or 410 errors when downloading

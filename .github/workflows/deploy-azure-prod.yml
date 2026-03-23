@@ -160,6 +160,27 @@ jobs:
           echo "ARM_TENANT_ID=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['tenantId'])")" >> "$GITHUB_ENV"
           echo "ARM_SUBSCRIPTION_ID=$(echo '${{ steps.azure_creds.outputs.normalized }}' | python3 -c "import sys,json; print(json.load(sys.stdin)['subscriptionId'])")" >> "$GITHUB_ENV"
 
+      - name: Ensure Key Vault secret permissions for deployer
+        env:
+          KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+        run: |
+          set -euo pipefail
+
+          az keyvault set-policy \
+            --name "$KEY_VAULT_NAME" \
+            --spn "$ARM_CLIENT_ID" \
+            --secret-permissions get list set delete \
+            --only-show-errors \
+            >/dev/null
+
+          az keyvault secret list \
+            --vault-name "$KEY_VAULT_NAME" \
+            --maxresults 1 \
+            --only-show-errors \
+            >/dev/null
+
+          echo "Verified Key Vault secret access for deploy principal."
+
       - name: Verify remote state Blob access
         run: |
           set -euo pipefail
