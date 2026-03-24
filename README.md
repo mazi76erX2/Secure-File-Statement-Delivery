@@ -29,7 +29,7 @@ Setup:
 
 ```bash
 # 1. Clone
-git clone <repo-url>
+git clone https://github.com/mazi76erX2/Secure-File-Statement-Delivery.git
 cd Secure-File-Statement-Delivery
 
 # 2. Install dependencies
