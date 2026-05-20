@@ -11,7 +11,7 @@ Quick (Docker-only)
 
 Deployment (API docs):
 
-https://ca-stmt-api.nicemushroom-97020d13.southafricanorth.azurecontainerapps.io/docs
+[https://ca-stmt-api.braveriver-f255919f.southafricanorth.azurecontainerapps.io/docs](https://ca-stmt-api.braveriver-f255919f.southafricanorth.azurecontainerapps.io/docs)
 
 Notes:
 - Admin endpoints require `X-API-Key` (set `STATEMENT_API_KEY` in `.env` or as a secret).
