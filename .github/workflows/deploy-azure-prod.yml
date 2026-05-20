@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Validate required secrets
         env:
@@ -163,11 +163,15 @@ jobs:
       - name: Ensure Key Vault secret permissions for deployer
         env:
           KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+          KEY_VAULT_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
         run: |
           set -euo pipefail
 
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
           az keyvault set-policy \
             --name "$KEY_VAULT_NAME" \
+            --resource-group "$KEY_VAULT_RESOURCE_GROUP" \
             --spn "$ARM_CLIENT_ID" \
             --secret-permissions get list set delete \
             --only-show-errors \
